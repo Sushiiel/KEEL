@@ -303,6 +303,20 @@ def integrations_status() -> dict[str, Any]:
     return _st()
 
 
+@app.get("/robots.txt")
+def robots() -> Response:
+    return Response("User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\n"
+                    "Sitemap: https://keel.best/sitemap.xml\n", media_type="text/plain")
+
+
+@app.get("/sitemap.xml")
+def sitemap() -> Response:
+    urls = "".join(f"<url><loc>https://keel.best{p}</loc></url>" for p in ("/", "/docs"))
+    return Response(f'<?xml version="1.0" encoding="UTF-8"?>'
+                    f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>',
+                    media_type="application/xml")
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {"status": "ok", "service": "keel", "version": "0.3.0"}

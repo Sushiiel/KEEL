@@ -35,8 +35,9 @@ all = ["litellm", "anthropic", "mcp", "opentelemetry-api", "opentelemetry-sdk",
 keel = "keel.cli:main"
 
 [project.urls]
-Documentation = "http://localhost:8347/docs"
-Source = "https://github.com/keel/keel"
+Documentation = "https://keel.best/docs"
+Source = "https://github.com/Sushiiel/KEEL"
+Homepage = "https://keel.best"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
