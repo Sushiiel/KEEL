@@ -338,6 +338,10 @@ async def not_found(request: Request, exc) -> Response:
     target = _FRIENDLY_REDIRECTS.get(path.lower())
     if target:
         return RedirectResponse(target, status_code=307)
+    # never intercept ACME HTTP-01 challenges — a proxy in front of us may
+    # rely on this path for TLS issuance/renewal. Plain 404, no JSON body.
+    if path.startswith("/.well-known/acme-challenge"):
+        return Response(status_code=404)
     if path.startswith(("/api", "/a2a", "/.well-known")):
         return JSONResponse({"error": "not found", "path": path,
                              "docs": "https://keel.best/docs"}, status_code=404)
