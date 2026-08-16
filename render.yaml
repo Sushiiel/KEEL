@@ -1,20 +1,32 @@
-# One-click deploy to Render.com — https://render.com/deploy
+# One-click free deploy to Render — https://render.com
+# Render reads this file when you create a "Blueprint" from the GitHub repo.
 services:
   - type: web
     name: keel
     runtime: docker
+    plan: free                      # free web instance (spins down when idle)
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
     envVars:
       - key: KEEL_AUTH_REQUIRED
-        value: "1"
+        value: "1"                  # require login (real product)
       - key: KEEL_HTTPS
-        value: "1"
+        value: "1"                  # Secure cookies behind Render's TLS
       - key: KEEL_SECRET_KEY
-        generateValue: true          # Render generates a strong secret
-      # Add RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
-      # and GEMINI_API_KEY in the Render dashboard after deploy.
-    disk:
-      name: keel-data
-      mountPath: /data
-      sizeGB: 1
+        generateValue: true         # Render generates a stable secret (persists across deploys)
+      - key: KEEL_DATA_DIR
+        value: /data
+      # After deploy, add these in the Render dashboard → Environment:
+      #   GEMINI_API_KEY          (your free Gemini key — the LLM reviewer)
+      #   RAZORPAY_KEY_ID         (once you're ready to take payments)
+      #   RAZORPAY_KEY_SECRET
+      #   RAZORPAY_WEBHOOK_SECRET
+
+# ⚠ FREE TIER HAS NO PERSISTENT DISK: /data lives in the container, so accounts,
+# the ledger, and the signing key RESET on every redeploy/restart. That's fine
+# for a first public launch/demo. For durable data, upgrade to Starter ($7/mo)
+# and uncomment the disk block below (then data survives redeploys):
+#    disk:
+#      name: keel-data
+#      mountPath: /data
+#      sizeGB: 1
