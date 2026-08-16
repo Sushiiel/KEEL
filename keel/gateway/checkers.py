@@ -159,15 +159,11 @@ def check_grounding(req: ActionRequest, spec: ActionClassSpec) -> CheckResult:
                                detail="action class requires grounded claims; none provided")
         return CheckResult(checker="citation_integrity", verdict="pass",
                            detail="no claims made")
-    # document evidence (PDF/office) is parsed to text before checking, so
-    # claims can be grounded against real documents (Unstructured / Docling)
-    from ..integrations import adapters as _ad
-    for e in req.evidence:
-        src = (e.source or "")
-        if src.lower().endswith((".pdf", ".docx", ".pptx", ".html")) and len(e.content) < 40:
-            parsed = _ad.parse_document(src)
-            if parsed:
-                e.content = parsed
+    # SECURITY: this checker NEVER reads files or fetches URLs. Evidence is
+    # untrusted, agent-controlled input; resolving `evidence.source` here would
+    # be a local-file-read / SSRF sink. Document parsing (Unstructured/Docling)
+    # is available only via the explicit, sandboxed ingestion endpoint, which
+    # allowlists inputs — see integrations.adapters.parse_document.
     ev = {e.ref: e for e in req.evidence}
     problems, checked = [], 0
     for i, claim in enumerate(req.claims):

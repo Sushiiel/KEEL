@@ -8,9 +8,36 @@ from typing import Any, Optional
 
 # ── document evidence: Unstructured / Docling ────────────────────────────────
 
+def _safe_local_path(path: str) -> Optional[str]:
+    """Resolve `path` ONLY if it stays inside the configured, sandboxed evidence
+    directory (KEEL_EVIDENCE_DIR). Rejects URLs, absolute paths, and traversal.
+    Returns the safe absolute path, or None if it must not be read."""
+    import os
+    from urllib.parse import urlparse
+    base = os.environ.get("KEEL_EVIDENCE_DIR")
+    if not base or not isinstance(path, str) or not path:
+        return None
+    if urlparse(path).scheme:                 # reject any URL scheme (SSRF)
+        return None
+    base_abs = os.path.realpath(base)
+    target = os.path.realpath(os.path.join(base_abs, path))
+    if target == base_abs or target.startswith(base_abs + os.sep):
+        return target
+    return None                               # traversal / outside sandbox
+
+
 def parse_document(path_or_bytes: Any, filename: str = "") -> Optional[str]:
-    """Extract text from a PDF/office document so citation-integrity can check
-    claims against it. Tries Docling, then Unstructured. None if unavailable."""
+    """Extract text from a PDF/office document (Docling, then Unstructured).
+
+    SECURITY: string paths are read ONLY from the sandboxed KEEL_EVIDENCE_DIR
+    (no URLs, no absolute paths, no traversal). Bytes/file-like inputs are
+    parsed directly and are always safe. Never called on untrusted request
+    fields — only from an explicit ingestion flow. None if unavailable."""
+    if isinstance(path_or_bytes, str):
+        safe = _safe_local_path(path_or_bytes)
+        if safe is None:
+            return None
+        path_or_bytes = safe
     try:
         from docling.document_converter import DocumentConverter  # type: ignore
         if isinstance(path_or_bytes, str):
