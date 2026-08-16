@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KEEL Documentation</title>
+<meta name="description" content="Documentation for KEEL — the runtime trust layer for agentic AI. Install, integrate, deploy, and operate.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23FFFFFF' stroke='%23DDE2D9'/%3E%3Cpath d='M8 6v20M8 16l12-10M8 16l12 10' stroke='%232F49C9' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a href="/" class="brand" style="text-decoration:none">KE<b>E</b>L</a>
+    <nav>
+      <a href="/">Home</a><a href="/docs">Docs</a><a href="/app">Console</a>
+    </nav>
+    <span class="spacer"></span>
+    <a href="/app" class="btn primary">Open console →</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="docs">
+    <aside class="docs-nav">
+      <h4>Getting started</h4>
+      <a href="#overview">Overview</a>
+      <a href="#install">Install</a>
+      <a href="#quickstart">Quickstart</a>
+      <h4>Concepts</h4>
+      <a href="#concepts">Core concepts</a>
+      <a href="#decisions">Decisions &amp; verdicts</a>
+      <a href="#autonomy">Earned autonomy</a>
+      <a href="#certificates">Certificates &amp; ledger</a>
+      <h4>Integrate</h4>
+      <a href="#sdk">Python SDK</a>
+      <a href="#api">REST API</a>
+      <a href="#mcp">MCP proxy</a>
+      <h4>Operate</h4>
+      <a href="#console">The console</a>
+      <a href="#deploy">Deployment</a>
+      <a href="#accounts">Accounts &amp; login</a>
+      <a href="#security">Security</a>
+      <a href="#compliance">Compliance</a>
+      <a href="#billing">Plans &amp; billing</a>
+    </aside>
+
+    <main class="docs-body">
+      <h2 id="overview">Overview</h2>
+      <p>KEEL is a vendor-neutral runtime trust layer for AI agents. It sits between an agent and
+        the real world: every proposed action is verified <em>before</em> it executes, decided as
+        <code>ALLOW</code> / <code>BLOCK</code> / <code>ESCALATE</code>, and recorded as a signed,
+        tamper-proof certificate.</p>
+      <p>The core principle: <strong>the model proposes; it never adjudicates its own
+        trustworthiness.</strong> Deterministic checks and calibrated evidence decide — an optional
+        LLM reviewer may only lower a decision, never raise it. The system fails closed.</p>
+      <div class="note">KEEL is universal — any framework (LangChain, OpenAI SDK, CrewAI, Claude
+        Code, Cursor, custom), any language, any field. One policy and one audit log across every
+        agent you run.</div>
+
+      <h2 id="install">Install</h2>
+      <p>KEEL is a self-contained Python package — no database or external services required to
+        start.</p>
+      <pre><code>pip install keel
+
+keel serve            # starts gateway + console + docs on :8347
+keel serve --port 9000 --sandbox   # with the demo worlds
+keel version</code></pre>
+      <p>Open <code>http://localhost:8347</code> for the site, <code>/app</code> for the operator
+        console, and <code>/docs</code> for these docs. Data is stored under <code>~/.keel/data</code>
+        by default (override with <code>KEEL_DATA_DIR</code>).</p>
+
+      <h2 id="quickstart">Quickstart</h2>
+      <p>Put any agent behind the gateway in three steps: register once, check before acting, report
+        the outcome. With the Python SDK a decorator does all three.</p>
+      <pre><code>from keel.sdk import KeelGuard, GuardRejected
+
+guard = KeelGuard("http://localhost:8347", agent_id="support-bot")
+guard.register(name="Support Bot", action_classes={
+    "send_reply":   {"risk": "low"},
+    "issue_refund": {"risk": "high", "budget_per_day": 500,
+                     "requires_evidence": True}})
+
+@guard.protect("issue_refund", cost=lambda amount, **kw: amount)
+def issue_refund(customer_id, amount):
+    ...   # only runs on ALLOW; the wrapper reports success/failure automatically
+
+try:
+    issue_refund("cus_123", 49.0)
+except GuardRejected as e:
+    print("KEEL blocked it:", e.decision["reasons"])</code></pre>
+      <div class="note">New agents default to <strong>shadow mode</strong>: KEEL signs and records
+        every decision and flags what it <em>would</em> have blocked, but blocks nothing except
+        tripwires. Set <code>shadow_mode=False</code> at registration to enforce.</div>
+
+      <h2 id="concepts">Core concepts</h2>
+      <table>
+        <tr><th>Term</th><th>Meaning</th></tr>
+        <tr><td class="mono">agent</td><td>Any AI system that takes actions. Registered once with the
+          action classes it may attempt.</td></tr>
+        <tr><td class="mono">action class</td><td>A named capability (<code>send_email</code>,
+          <code>run_command</code>) with a risk level, optional budget, rate limit, and evidence
+          requirement.</td></tr>
+        <tr><td class="mono">risk</td><td><code>low</code> / <code>medium</code> / <code>high</code> /
+          <code>critical</code> — sets the success floor and human-oversight requirement.</td></tr>
+        <tr><td class="mono">tripwire</td><td>An irreversible-catastrophe pattern (DB drop, funds
+          transfer, recursive delete…) hard-blocked in every mode.</td></tr>
+        <tr><td class="mono">certificate</td><td>The signed, logged record of a single decision.</td></tr>
+        <tr><td class="mono">outcome</td><td>What actually happened after an allowed action. Feeds
+          calibration. Only <em>externally-verified</em> outcomes earn autonomy.</td></tr>
+      </table>
+
+      <h2 id="decisions">Decisions &amp; verdicts</h2>
+      <p>Every <code>check</code> returns one decision:</p>
+      <table>
+        <tr><th>Decision</th><th>Meaning</th></tr>
+        <tr><td><strong>ALLOW</strong></td><td>All checks pass and the agent has earned the required
+          trust — proceed.</td></tr>
+        <tr><td><strong>BLOCK</strong></td><td>A tripwire, policy rule, or grounding check failed —
+          refused.</td></tr>
+        <tr><td><strong>ESCALATE</strong></td><td>Plausible but not yet trusted (cold start, risky, or
+          novel) — sent to the human approval queue.</td></tr>
+        <tr><td><strong>SHADOW</strong></td><td>Agent is in shadow mode — recorded and signed, but not
+          enforced (except tripwires).</td></tr>
+      </table>
+      <p>Checks run cheapest-and-most-fatal first: tripwires → schema → policy/budget → citation
+        integrity → consistency → destructive-intent → calibrated confidence. The deterministic path
+        completes in roughly two milliseconds.</p>
+
+      <h2 id="autonomy">Earned autonomy</h2>
+      <p>Autonomy is earned per <em>(agent, action class)</em> from verified outcomes — never granted
+        by configuration. KEEL computes an <strong>anytime-valid</strong> lower bound on the success
+        rate (a betting confidence sequence, valid under continuous monitoring), audits it for drift
+        with a Page-Hinkley detector, and holds an expected-harm ceiling with conformal risk control
+        that self-tightens the required floor when allowed actions cause harm.</p>
+      <table>
+        <tr><th>Tier</th><th>Behavior</th></tr>
+        <tr><td>T1</td><td>Certify &amp; recommend — a human executes / approves.</td></tr>
+        <tr><td>T2</td><td>Auto-execute, notify — earned from ≥10 externally-verified successes at a
+          calibrated floor ≥0.80.</td></tr>
+        <tr><td>T3</td><td>Auto-execute, silent — earned from ≥30 verified successes at floor ≥0.95,
+          zero harm.</td></tr>
+      </table>
+      <div class="warn note"><strong>Trust-farming is closed:</strong> a clean record on low-risk
+        actions never unlocks high-risk classes, and an agent's own success reports never promote it —
+        only outcomes verified by an external signal (webhook, human review, reconciliation) count.</div>
+
+      <h2 id="certificates">Certificates &amp; ledger</h2>
+      <p>Every decision is an Ed25519-signed certificate appended to a Merkle transparency log.
+        Altering any historical certificate breaks the chain — which is what makes a KEEL record
+        admissible in a postmortem, an audit, or a regulatory review. Fetch and verify any
+        certificate, with its inclusion proof, via the API or the console's Ledger view.</p>
+      <p>The open certificate schema is published at
+        <a href="/api/schema/certificate"><code>/api/schema/certificate</code></a>.</p>
+
+      <h2 id="sdk">Python SDK</h2>
+      <p><code>keel.sdk.KeelGuard(base_url, agent_id, wait_for_approval_s=0)</code></p>
+      <table>
+        <tr><th>Method</th><th>Purpose</th></tr>
+        <tr><td class="mono">register(name, action_classes, framework, shadow_mode)</td>
+          <td>Declare the agent and its capabilities (once, at startup).</td></tr>
+        <tr><td class="mono">check(action_class, intent, payload, targets, claims, evidence, cost, …)</td>
+          <td>Ask before acting. Returns the decision dict.</td></tr>
+        <tr><td class="mono">outcome(request_id, success, harm, detail)</td>
+          <td>Report what happened after an allowed action.</td></tr>
+        <tr><td class="mono">@protect(action_class, cost=…, targets=…)</td>
+          <td>Decorator: wraps a function so it runs only on ALLOW and auto-reports the outcome.</td></tr>
+      </table>
+
+      <h2 id="api">REST API</h2>
+      <p>Any language can integrate over HTTP. Core endpoints:</p>
+      <table>
+        <tr><th>Endpoint</th><th>Purpose</th></tr>
+        <tr><td><span class="method">POST</span><code>/api/gateway/agents</code></td>
+          <td>Register an agent and its action classes.</td></tr>
+        <tr><td><span class="method">POST</span><code>/api/gateway/check</code></td>
+          <td>Decide an action. Returns <code>{decision, request_id, reasons, cert_id, confidence}</code>.</td></tr>
+        <tr><td><span class="method">POST</span><code>/api/gateway/outcome</code></td>
+          <td>Report an outcome for calibration.</td></tr>
+        <tr><td><span class="method get">GET</span><code>/api/gateway/decisions</code></td>
+          <td>Recent signed decisions.</td></tr>
+        <tr><td><span class="method get">GET</span><code>/api/gateway/approvals</code></td>
+          <td>Pending human-approval queue.</td></tr>
+        <tr><td><span class="method">POST</span><code>/api/gateway/approvals/{id}</code></td>
+          <td>Approve or deny an escalation (records approver identity).</td></tr>
+        <tr><td><span class="method get">GET</span><code>/api/gateway/audit-pack</code></td>
+          <td>Generate the self-verifying compliance evidence bundle.</td></tr>
+        <tr><td><span class="method">POST</span><code>/api/webhook/alertmanager</code></td>
+          <td>Ingest Prometheus Alertmanager events (ops vertical).</td></tr>
+      </table>
+      <pre><code>curl -X POST http://localhost:8347/api/gateway/check \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"support-bot","action_class":"issue_refund",
+       "intent":"refund duplicate charge","payload":{"amount":49},
+       "cost":49,"claims":[{"statement":"charged 49 twice",
+       "evidence_refs":["e1"]}],"evidence":[{"ref":"e1",
+       "content":"charges: 49 at 09:14, 49 at 09:14"}]}'</code></pre>
+
+      <h2 id="mcp">MCP proxy (non-bypassable)</h2>
+      <p>For MCP-based agents (Claude Code, Cursor), deploy KEEL as a proxy that holds the real tool
+        servers. The agent connects to KEEL instead of the tools, so it physically cannot act without
+        a decision. Action classes are auto-derived from the tools' schemas — zero integration code.</p>
+      <pre><code>keel guard proxy.json
+
+# proxy.json
+{"agent_id": "claude-code",
+ "shadow_mode": true,
+ "risk_overrides": {"run_command": "high", "write_file": "medium"},
+ "servers": [{"name": "fs", "command": "npx",
+              "args": ["-y", "@modelcontextprotocol/server-filesystem", "/work"]}]}</code></pre>
+      <p>Attach it to Claude Code with:</p>
+      <pre><code>claude mcp add keel-guarded -- keel guard /path/to/proxy.json</code></pre>
+
+      <h2 id="console">The console</h2>
+      <p>The operator console at <code>/app</code> is the daily surface: registered agents with their
+        earned tiers, the live decision feed, the human approval queue, the transparency ledger with
+        inclusion proofs, and one-click evidence-pack export. Everything it shows comes through the
+        same API — nothing is hidden from integrators.</p>
+
+      <h2 id="deploy">Deployment</h2>
+      <p>KEEL runs as a single process for evaluation and scales out for production.</p>
+      <pre><code># container
+docker compose up                    # KEEL alone
+docker compose --profile full up     # + Qdrant + tracing
+
+# kubernetes
+helm install keel deploy/helm/keel</code></pre>
+      <p>Optional integrations activate by environment variable: <code>KEEL_LLM_MODEL</code> (LiteLLM
+        routing for the optional reviewer), <code>QDRANT_URL</code> (vector retrieval),
+        <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> (OpenTelemetry tracing). None are required.</p>
+
+      <h2 id="accounts">Accounts &amp; login</h2>
+      <p>In production (<code>KEEL_AUTH_REQUIRED=1</code>) the console requires an account.
+        Each account is fully isolated: its agents, decisions, billing, and paid entitlements
+        are its own. A user's payment unlocks Team features <strong>for that account only</strong>.</p>
+      <ul>
+        <li>First visit to <code>/app</code> → <strong>Create your account</strong>; then sign in.</li>
+        <li>Passwords are scrypt-hashed; sessions are signed, httpOnly cookies.</li>
+        <li>Each account gets an <strong>API key</strong> (shown in the console). Agents
+          authenticate to the gateway with <code>Authorization: Bearer keel_ak_…</code> so their
+          actions and billing attribute to that account.</li>
+      </ul>
+      <p>For local self-host you can leave auth off; a single <code>default</code> account is used
+        so nothing needs configuring to try. See <a href="#" onclick="return false">DEPLOY.md</a>.</p>
+
+      <h2 id="security">Security</h2>
+      <ul>
+        <li><strong>Fails closed.</strong> Unknown agents, undeclared action classes, and internal
+          errors all deny.</li>
+        <li><strong>Signing keys</strong> should live in an HSM/KMS outside the agent's reach in
+          production (Team &amp; Enterprise tiers).</li>
+        <li><strong>Evidence is untrusted input</strong> — grounded status never raises the trust of an
+          action touching credentials, funds, or data egress; instruction-shaped evidence is flagged.</li>
+        <li><strong>Tamper-evidence:</strong> the Merkle log detects any alteration of historical
+          records; the audit pack re-verifies itself from the root.</li>
+      </ul>
+
+      <h2 id="compliance">Compliance</h2>
+      <p>The evidence pack (<code>/api/gateway/audit-pack</code>) maps signed decisions to the controls
+        auditors and insurers sample:</p>
+      <table>
+        <tr><th>Framework</th><th>What KEEL provides</th></tr>
+        <tr><td>EU AI Act Art 12</td><td>Per-decision signed, timestamped, tamper-evident logs.</td></tr>
+        <tr><td>EU AI Act Art 14</td><td>Risk-tiered human oversight with recorded approver identity.</td></tr>
+        <tr><td>ISO/IEC 42001</td><td>Uniform-random sampled decisions with verifiable signatures.</td></tr>
+        <tr><td>NIST AI RMF</td><td>Measured calibration and drift; autonomy from outcomes, not config.</td></tr>
+      </table>
+      <div class="note">Honest limits, stated on every certificate: statistical bounds are marginal
+        per-bucket (never a per-decision probability), void under detected drift, and citation
+        integrity verifies traceability — not that the evidence is true.</div>
+
+      <h2 id="billing">Plans &amp; billing</h2>
+      <p>The engine and SDK are open and free to self-host. The <strong>Team</strong> plan
+        (₹830/mo in India via Razorpay, or $10/mo via Stripe) unlocks managed hosting, HSM-backed signing keys, approval-queue integrations
+        (Slack/ticketing), the full &amp; scheduled evidence-pack export, and priority support.</p>
+      <table>
+        <tr><th>Feature</th><th>Free</th><th>Team&nbsp;(₹830 / $10 · mo)</th></tr>
+        <tr><td>Gateway, SDK, tripwires, calibration</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Signed transparency log</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Evidence pack</td><td>preview (3)</td><td>full &amp; scheduled</td></tr>
+        <tr><td>Slack / ticketing approval routing</td><td>—</td><td>✓</td></tr>
+        <tr><td>HSM-backed signing keys</td><td>—</td><td>✓</td></tr>
+        <tr><td>Priority support</td><td>—</td><td>✓</td></tr>
+      </table>
+      <p>KEEL supports <strong>Razorpay</strong> (India — UPI, cards, netbanking) and
+        <strong>Stripe</strong> (elsewhere). Configure whichever fits your region; the plan
+        activates automatically on payment (webhook + return redirect both handled).</p>
+      <pre><code># India — Razorpay (default when these are set)
+export RAZORPAY_KEY_ID=rzp_live_...
+export RAZORPAY_KEY_SECRET=...
+export RAZORPAY_WEBHOOK_SECRET=...
+# Razorpay dashboard: webhook → https://YOUR_HOST/api/billing/webhook/razorpay
+#                     event: payment_link.paid
+
+# Elsewhere — Stripe
+export STRIPE_SECRET_KEY=sk_live_...
+export STRIPE_WEBHOOK_SECRET=whsec_...
+# Stripe dashboard: webhook → https://YOUR_HOST/api/billing/webhook
+#                   event: checkout.session.completed</code></pre>
+      <div class="note">Without payment keys, real payments are off and the console offers a
+        clearly-labeled <em>dev / evaluation</em> unlock so you can try the Team features locally.
+        See <a href="#" onclick="return false">PUBLISHING.md</a> in the repo for the full release
+        and payment setup.</div>
+
+      <p style="margin-top:40px;color:var(--ink-3)">Questions? Open the
+        <a href="/app">console</a> or read the <a href="/">product overview</a>.</p>
+    </main>
+  </div>
+</div>
+<script>
+(function(){
+  const links=[...document.querySelectorAll('.docs-nav a')];
+  const map=new Map(links.map(a=>[a.getAttribute('href').slice(1),a]));
+  const heads=[...document.querySelectorAll('.docs-body h2, .docs-body h3')].filter(h=>h.id);
+  const spy=()=>{let cur=heads[0];for(const h of heads){if(h.getBoundingClientRect().top<120)cur=h;}
+    links.forEach(a=>a.classList.remove('on'));const a=map.get(cur&&cur.id);if(a)a.classList.add('on');};
+  document.addEventListener('scroll',spy,{passive:true});spy();
+})();
+</script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-analytics.js";
+  const firebaseConfig = {
+    apiKey: "AIzaSyAileD2IMoVL0TuRf4mn-rsgpSwyMM-J9w",
+    authDomain: "keel-a0deb.firebaseapp.com",
+    projectId: "keel-a0deb",
+    storageBucket: "keel-a0deb.firebasestorage.app",
+    messagingSenderId: "231684244558",
+    appId: "1:231684244558:web:d844427a3852dc03d1af1f",
+    measurementId: "G-1G820SNBJN"
+  };
+  try { getAnalytics(initializeApp(firebaseConfig)); } catch (e) {}
+</script>
+</body>
+</html>

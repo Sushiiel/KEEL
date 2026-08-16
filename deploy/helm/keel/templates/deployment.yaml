@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-keel
+  labels: { app: keel }
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: { app: keel }
+  template:
+    metadata:
+      labels: { app: keel }
+    spec:
+      containers:
+        - name: keel
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{ containerPort: 8347 }]
+          env:
+            - { name: KEEL_DATA_DIR, value: /data }
+            {{- range $k, $v := .Values.env }}
+            {{- if $v }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            httpGet: { path: /api/domains, port: 8347 }
+            initialDelaySeconds: 20
+          livenessProbe:
+            httpGet: { path: /api/domains, port: 8347 }
+            initialDelaySeconds: 90
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-keel-data }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

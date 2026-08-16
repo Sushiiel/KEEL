@@ -1,0 +1,4 @@
+recursive-include keel/ui *
+recursive-include keel/site *
+recursive-include keel/schemas *
+include README.md GETTING-STARTED.md INTEGRATION.md LICENSE

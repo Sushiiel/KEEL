@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keel.dev/schemas/keel-certificate-v1.json",
+  "title": "KEEL Causal Certificate v1",
+  "description": "A signed, machine-readable verdict on a causal claim about an infrastructure incident, with calibrated uncertainty, refutation results, twin-simulated action outcome, blast radius, and policy decision. Published as an open format: any agent may emit or consume KEEL certificates.",
+  "type": "object",
+  "required": ["cert_id", "schema_version", "incident_id", "claim", "verdict",
+               "conformal", "drift", "graph_version", "scm_version",
+               "model_version", "created_at", "signer", "signature"],
+  "properties": {
+    "cert_id": {"type": "string", "pattern": "^keel:cert:[A-F0-9]+$"},
+    "schema_version": {"const": "keel-certificate/v1"},
+    "tenant": {"type": "string"},
+    "incident_id": {"type": "string"},
+    "claim": {
+      "type": "object",
+      "required": ["root_cause"],
+      "properties": {
+        "root_cause": {"type": "string", "description": "canonical variable '<entity>|<event_type>'"},
+        "mechanism": {"type": "string"},
+        "generator": {"type": "string"}
+      }
+    },
+    "claimant": {"type": "string", "description": "which agent proposed the claim"},
+    "verdict": {"enum": ["SUPPORTED", "REFUTED", "AMBIGUOUS", "ABSTAIN", "INSUFFICIENT"]},
+    "pn": {"type": ["number", "null"], "description": "probability of necessity; null when only bounds are identified"},
+    "pn_lo": {"type": "number"}, "pn_hi": {"type": "number"},
+    "ps": {"type": ["number", "null"]},
+    "ps_lo": {"type": "number"}, "ps_hi": {"type": "number"},
+    "point_identified": {"type": "boolean"},
+    "identification": {"type": "string"},
+    "competing": {"type": "array", "items": {"type": "object"}},
+    "evidence_summary": {"type": "object"},
+    "refutation": {"type": "array", "items": {
+      "type": "object",
+      "required": ["refuter", "passed"],
+      "properties": {"refuter": {"type": "string"}, "passed": {"type": "boolean"},
+                     "detail": {"type": "string"}, "delta": {"type": "number"}}
+    }},
+    "conformal": {
+      "type": "object",
+      "properties": {"set": {"type": "array", "items": {"type": "string"}},
+                     "alpha": {"type": "number"}, "q_hat": {"type": ["number", "null"]},
+                     "n": {"type": "integer"}, "strata": {"type": "string"}}
+    },
+    "drift": {"type": "object"},
+    "action": {"type": ["object", "null"]},
+    "twin": {"type": ["object", "null"]},
+    "blast_radius": {"type": ["object", "null"]},
+    "gate": {"type": ["object", "null"]},
+    "autonomy_tier": {"type": "integer", "minimum": 0, "maximum": 3},
+    "decision": {"type": "string"},
+    "graph_version": {"type": "string"},
+    "scm_version": {"type": "string"},
+    "model_version": {"type": "string"},
+    "created_at": {"type": "number"},
+    "signer": {"type": "string"},
+    "signature": {"type": "string", "description": "hex Ed25519 over canonical JSON payload (sorted keys, signature/log fields excluded)"},
+    "log_index": {"type": ["integer", "null"], "description": "position in the append-only Merkle transparency log"},
+    "log_root": {"type": "string"}
+  }
+}

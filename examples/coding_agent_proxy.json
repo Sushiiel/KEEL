@@ -1,0 +1,9 @@
+{
+  "agent_id": "claude-code",
+  "shadow_mode": true,
+  "risk_overrides": {"run_command": "high", "write_file": "medium",
+                     "read_file": "low"},
+  "servers": [{"name": "devtools",
+               "command": "/Users/mymac/Desktop/project Ai/keel/.venv/bin/python",
+               "args": ["examples/devtools_server.py", "/tmp/keel-devtest"]}]
+}

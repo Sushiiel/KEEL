@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KEEL — The Trust Layer for AI Agents</title>
+<meta name="description" content="KEEL is the vendor-neutral system-of-record for AI accountability: it verifies every autonomous agent action before it executes, and signs tamper-proof proof your auditor, insurer, and regulator require.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23FFFFFF' stroke='%23DDE2D9'/%3E%3Cpath d='M8 6v20M8 16l12-10M8 16l12 10' stroke='%232F49C9' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <span class="brand">KE<b>E</b>L</span>
+    <nav>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#use-cases">Use cases</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/docs">Docs</a>
+    </nav>
+    <span class="spacer"></span>
+    <a href="/docs" class="btn ghost">Documentation</a>
+    <a href="/app" class="btn primary">Open console →</a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow">● Runtime trust layer for agentic AI</span>
+    <h1>Let your AI agents act — <span class="accent">with proof they're safe.</span></h1>
+    <p class="lede">KEEL is the vendor-neutral system-of-record for AI accountability. It verifies
+      every autonomous agent action <em>before</em> it executes — blocking catastrophes, catching
+      fabrications, and earning trust from evidence — then signs tamper-proof proof your auditor,
+      insurer, and regulator now require.</p>
+    <div class="cta">
+      <a href="/app" class="btn primary">Open the live console →</a>
+      <a href="/docs#quickstart" class="btn">Get started in 3 lines</a>
+    </div>
+    <p class="trust">Works with <b>any</b> agent framework — LangChain, OpenAI SDK, CrewAI,
+      Claude Code, Cursor, custom. Deterministic checks in <b>~2ms</b>. Every decision signed
+      &amp; logged.</p>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node"><div class="t">AI AGENT</div><div class="d">proposes an action</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node gate"><div class="t">KEEL GATEWAY</div><div class="d">verify before execute</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node block"><div class="t">⛔ BLOCK</div><div class="d">catastrophe / fabrication</div></div>
+        <div class="flow-arrow">·</div>
+        <div class="flow-node"><div class="t">⏸ ESCALATE</div><div class="d">human approval queue</div></div>
+        <div class="flow-arrow">·</div>
+        <div class="flow-node allow"><div class="t">✅ ALLOW</div><div class="d">+ signed certificate</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section id="problem" style="padding-top:20px">
+  <div class="wrap">
+    <div class="section-tag">The problem</div>
+    <h2>Companies are liable for what their AI does — and can't prove they control it.</h2>
+    <p class="sub">AI agents now act: they send messages, move money, run commands, change data.
+      When they act wrongly, the company pays. Yet nothing stands at the moment of action with a
+      guarantee — and no standard proof of control exists.</p>
+    <div class="stats">
+      <div class="stat"><div class="n">40<span class="u">%+</span></div>
+        <div class="l">of agentic-AI projects forecast cancelled by 2027</div>
+        <div class="src">Gartner, 2025</div></div>
+      <div class="stat"><div class="n">95<span class="u">%</span></div>
+        <div class="l">of enterprise GenAI pilots deliver no measurable P&amp;L</div>
+        <div class="src">MIT / NANDA, 2025</div></div>
+      <div class="stat"><div class="n">700<span class="u">+</span></div>
+        <div class="l">organizations breached through one AI integration</div>
+        <div class="src">Salesloft / Drift, 2025</div></div>
+      <div class="stat"><div class="n">$0</div>
+        <div class="l">proof a permission prompt leaves for your auditor or insurer</div>
+        <div class="src">the accountability gap</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how">
+  <div class="wrap">
+    <div class="section-tag">How it works</div>
+    <h2>Four layers decide every action — in milliseconds.</h2>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><div>
+        <h3>Tripwires — block the irreversible, without asking</h3>
+        <p>Database drops, funds transfers, recursive deletes, credential exports, mass sends are
+          refused unconditionally — even in shadow mode, even for a trusted agent. A human can't
+          be tricked into approving what's never offered.</p></div></div>
+      <div class="step"><div class="num">2</div><div>
+        <h3>Policy &amp; grounding — enforce rules and catch fabrication</h3>
+        <p>Scope, budget, and rate limits per action class. Every claim is checked against its cited
+          evidence: invented numbers and out-of-context quotes are stopped deterministically.</p></div></div>
+      <div class="step"><div class="num">3</div><div>
+        <h3>Calibrated autonomy — trust earned from evidence, not vibes</h3>
+        <p>Per agent and action class, KEEL computes an <em>anytime-valid</em> lower bound on success
+          from externally-verified outcomes, with drift detection and conformal risk control. Routine
+          work earns its way to auto-approval; risky or novel actions go to a human.</p></div></div>
+      <div class="step"><div class="num">4</div><div>
+        <h3>Signed record — tamper-proof proof of everything</h3>
+        <p>Every decision becomes an Ed25519-signed certificate in an append-only Merkle log.
+          Export a standards-mapped evidence pack in one click.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="section-tag">Why KEEL</div>
+    <h2>Not another permission prompt. The trust layer underneath all of them.</h2>
+    <div class="cards">
+      <div class="card"><div class="ic">⛨</div><h3>Non-bypassable enforcement</h3>
+        <p>Deploy as an MCP proxy that holds the tools: the agent physically cannot act without a
+          decision. Or drop in the SDK / REST call. Fails closed.</p></div>
+      <div class="card"><div class="ic">∿</div><h3>Frontier statistics</h3>
+        <p>Anytime-valid confidence sequences (valid under continuous monitoring), conformal risk
+          control that self-tightens on harm, Page-Hinkley drift, behavioral anomaly detection.</p></div>
+      <div class="card"><div class="ic">✎</div><h3>Cryptographic audit trail</h3>
+        <p>Signed, Merkle-anchored, independently verifiable. The evidence auditors and AI insurers
+          sample — mapped to EU AI Act, ISO 42001, and NIST AI RMF.</p></div>
+      <div class="card"><div class="ic">◇</div><h3>Vendor-neutral &amp; universal</h3>
+        <p>Any framework, any language, any field. One policy and one log across every agent you
+          run — coding assistants to customer-service bots to back-office automation.</p></div>
+      <div class="card"><div class="ic">↻</div><h3>Compounding trust</h3>
+        <p>Every certified action is a labeled outcome. Your calibration corpus grows and can't be
+          copied — the longer it runs, the more autonomy you safely unlock.</p></div>
+      <div class="card"><div class="ic">◈</div><h3>Honest by design</h3>
+        <p>Abstention is a first-class answer. Guarantees state their exact scope on the certificate.
+          A system that tells you when it doesn't know is one you can build on.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATE -->
+<section id="integrate" style="padding-top:20px">
+  <div class="wrap">
+    <div class="section-tag">Integrate</div>
+    <h2>Three lines. Any agent. Zero-regression start.</h2>
+    <p class="sub">New agents begin in shadow mode: KEEL signs and records everything, blocks only
+      catastrophes. Flip enforcement on when you trust what you see.</p>
+    <pre class="code"><span class="c"># pip install keel  ·  keel serve</span>
+<span class="k">from</span> keel.sdk <span class="k">import</span> KeelGuard
+
+guard = <span class="f">KeelGuard</span>(<span class="s">"http://localhost:8347"</span>, agent_id=<span class="s">"my-agent"</span>)
+guard.<span class="f">register</span>(name=<span class="s">"My Agent"</span>, action_classes={
+    <span class="s">"issue_refund"</span>: {<span class="s">"risk"</span>: <span class="s">"high"</span>, <span class="s">"budget_per_day"</span>: <span class="s">500</span>, <span class="s">"requires_evidence"</span>: <span class="k">True</span>}})
+
+<span class="k">@guard.protect</span>(<span class="s">"issue_refund"</span>, cost=<span class="k">lambda</span> amount, **kw: amount)
+<span class="k">def</span> <span class="f">issue_refund</span>(customer_id, amount):
+    ...  <span class="c"># runs only if KEEL allows — or a human approves</span></pre>
+  </div>
+</section>
+
+<!-- USE CASES -->
+<section id="use-cases">
+  <div class="wrap">
+    <div class="section-tag">Use cases</div>
+    <h2>Wherever an AI agent touches the real world.</h2>
+    <div class="uses">
+      <div class="use"><div class="who">Coding &amp; DevOps</div>
+        <h3>Guard AI coding assistants</h3>
+        <p>Claude Code, Cursor, Copilot agents run commands and edit files. KEEL blocks the
+          Replit-class database wipe and Gemini-class file destruction — before they execute.</p></div>
+      <div class="use"><div class="who">Customer operations</div>
+        <h3>Autonomous support &amp; refunds</h3>
+        <p>Bots that issue refunds and change accounts have no built-in approval prompt. KEEL is the
+          only thing between them and real money — with budgets, evidence checks, and a signed trail.</p></div>
+      <div class="use"><div class="who">Finance &amp; back office</div>
+        <h3>Agents that move money</h3>
+        <p>Payments, reconciliation, procurement. Velocity caps and earned autonomy stop the
+          trust-farming attack that escalated a $500K limit into $5M of fraud.</p></div>
+      <div class="use"><div class="who">Regulated industries</div>
+        <h3>Provable human oversight</h3>
+        <p>Healthcare, finance, public sector. Risk-tiered escalation with recorded approver identity —
+          the Article 14 human-oversight evidence your regulator asks for.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPLIANCE -->
+<section id="compliance">
+  <div class="wrap">
+    <div class="band">
+      <div class="section-tag" style="color:#93A2EC">Audit &amp; insurance</div>
+      <h2>The evidence pack your auditor and insurer already ask for.</h2>
+      <p>One click produces a self-verifying bundle: uniform-randomly sampled signed decisions with
+        Merkle inclusion proofs, per-agent calibration tables, the human-oversight record, and
+        control mappings. It proves itself from the log root.</p>
+      <div class="chips">
+        <span class="chip">EU AI Act · Art 12 &amp; 14</span>
+        <span class="chip">ISO/IEC 42001</span>
+        <span class="chip">NIST AI RMF</span>
+        <span class="chip">SOC 2 evidence</span>
+        <span class="chip">Cyber-insurance controls</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div class="wrap">
+    <div class="section-tag">Pricing</div>
+    <h2>Open core. Start free, scale when it's load-bearing.</h2>
+    <p class="sub">The engine and SDK are open and self-hostable. Paid tiers add managed hosting,
+      hardened key custody, and the compliance evidence workflow.</p>
+    <div class="tiers">
+      <div class="tier"><h3>Open Source</h3>
+        <div class="price">Free</div><small>self-hosted, MIT-style</small>
+        <ul><li>Full gateway &amp; SDK</li><li>All checkers &amp; calibration</li>
+          <li>Signed transparency log</li><li>MCP proxy &amp; REST API</li>
+          <li>Community support</li></ul>
+        <a href="/docs#quickstart" class="btn">Read the docs</a></div>
+      <div class="tier feat"><h3>Team</h3>
+        <div class="price">$10 <small>/ mo</small></div><small>managed cloud</small>
+        <ul><li>Everything in Open Source</li><li>Managed, HA hosting</li>
+          <li>HSM-backed signing keys</li><li>Approval queue integrations (Slack, ticketing)</li>
+          <li>Evidence-pack export &amp; scheduling</li><li>Email &amp; chat support</li></ul>
+        <a href="/app#/billing" class="btn primary">Upgrade — $10/mo</a></div>
+      <div class="tier"><h3>Enterprise</h3>
+        <div class="price">Custom</div><small>regulated &amp; at scale</small>
+        <ul><li>Everything in Team</li><li>SSO, RBAC, private deployment</li>
+          <li>WORM retention &amp; SCITT export</li><li>Auditor &amp; insurer evidence workflow</li>
+          <li>Custom tripwire &amp; policy sets</li><li>SLA &amp; solution engineering</li></ul>
+        <a href="/docs" class="btn">Contact us</a></div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <span class="brand">KE<b>E</b>L</span>
+        <p>The vendor-neutral system-of-record for AI accountability. Verify every agent action;
+          sign the proof.</p>
+      </div>
+      <div><h4>Product</h4>
+        <a href="#how">How it works</a><a href="#features">Features</a>
+        <a href="#pricing">Pricing</a><a href="/app">Console</a></div>
+      <div><h4>Developers</h4>
+        <a href="/docs#quickstart">Quickstart</a><a href="/docs#sdk">SDK reference</a>
+        <a href="/docs#api">API reference</a><a href="/api/schema/certificate">Certificate schema</a></div>
+      <div><h4>Company</h4>
+        <a href="/docs#security">Security</a><a href="/docs#compliance">Compliance</a>
+        <a href="/docs">Documentation</a></div>
+    </div>
+    <div class="foot-legal">
+      <span>© 2026 KEEL</span><span>·</span>
+      <span>Runtime trust layer for agentic AI</span><span>·</span>
+      <span class="mono">v0.3.0</span>
+    </div>
+  </div>
+</footer>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-analytics.js";
+  const firebaseConfig = {
+    apiKey: "AIzaSyAileD2IMoVL0TuRf4mn-rsgpSwyMM-J9w",
+    authDomain: "keel-a0deb.firebaseapp.com",
+    projectId: "keel-a0deb",
+    storageBucket: "keel-a0deb.firebasestorage.app",
+    messagingSenderId: "231684244558",
+    appId: "1:231684244558:web:d844427a3852dc03d1af1f",
+    measurementId: "G-1G820SNBJN"
+  };
+  try { getAnalytics(initializeApp(firebaseConfig)); } catch (e) {}
+</script>
+</body>
+</html>

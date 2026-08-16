@@ -1,0 +1,28 @@
+# ── secrets — NEVER commit ─────────────────────────────────────────────────
+.env
+.env.local
+*.pem
+*_secret
+session_secret
+**/session_secret
+
+# ── data & runtime ─────────────────────────────────────────────────────────
+data/
+*.db
+*.sqlite
+~/.keel/
+
+# ── python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# ── node / tooling ─────────────────────────────────────────────────────────
+node_modules/
+.DS_Store

@@ -1,0 +1,19 @@
+# KEEL production compose. Copy .env.example → .env and fill in secrets.
+#   docker compose up -d --build
+services:
+  keel:
+    build: .
+    restart: unless-stopped
+    ports: ["8347:8347"]
+    volumes: ["keel-data:/data"]
+    env_file: [.env]
+    environment:
+      KEEL_AUTH_REQUIRED: "1"
+      KEEL_HTTPS: "${KEEL_HTTPS:-0}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8347/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  keel-data:

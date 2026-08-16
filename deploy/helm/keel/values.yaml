@@ -1,0 +1,29 @@
+image:
+  repository: keel
+  tag: "0.2.0"
+  pullPolicy: IfNotPresent
+
+replicas: 1            # scm-service is the latency bottleneck; scale reads, not writes
+
+service:
+  type: ClusterIP
+  port: 8347
+
+persistence:
+  enabled: true
+  size: 5Gi
+
+env:
+  KEEL_AUTH_REQUIRED: "1"
+  KEEL_SECRET_KEY: ""        # REQUIRED: openssl rand -hex 32
+  KEEL_HTTPS: "1"
+  RAZORPAY_KEY_ID: ""
+  RAZORPAY_KEY_SECRET: ""
+  RAZORPAY_WEBHOOK_SECRET: ""
+  KEEL_LLM_MODEL: ""              # any LiteLLM route; empty = deterministic proposer
+  QDRANT_URL: ""                  # e.g. http://qdrant:6333
+  OTEL_EXPORTER_OTLP_ENDPOINT: "" # e.g. http://otel-collector:4318
+
+resources:
+  requests: { cpu: 500m, memory: 1Gi }
+  limits:   { cpu: "2",  memory: 4Gi }

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KEEL — Causal Verification Authority</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23FFFFFF' stroke='%23DDE2D9'/%3E%3Cpath d='M8 6v20M8 16l12-10M8 16l12 10' stroke='%232F49C9' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+<div id="app">
+  <nav class="rail" aria-label="Views">
+    <div class="wordmark">
+      <div class="name">KE<b>E</b>L</div>
+      <div class="sub">Causal Verification Authority</div>
+    </div>
+    <div class="views" id="nav"></div>
+    <div class="rail-foot">
+      <div class="tenant" id="foot-tenant">—</div>
+      <div class="row"><span class="lamp ok" id="foot-lamp"></span>
+        <span id="foot-drift">drift nominal</span></div>
+      <div class="row"><span id="foot-tier" class="chip brass">T0</span>
+        <span id="foot-corpus"></span></div>
+    </div>
+  </nav>
+  <main>
+    <header class="strip">
+      <span class="clock" id="clock">--:--:--Z</span>
+      <span class="sep"></span>
+      <span class="kv">graph <b id="strip-graph">—</b></span>
+      <span class="kv">calibration <b id="strip-cal">—</b></span>
+      <span class="kv">coverage <b id="strip-cov">—</b></span>
+      <span class="spacer"></span>
+      <select id="domain-sel" aria-label="Domain workspace"
+              style="background:var(--panel-3);color:var(--ink);border:1px solid var(--hairline);border-radius:6px;padding:5px 9px;font:12px var(--sans)"></select>
+      <span class="sep"></span>
+      <span class="kv">ledger root <b id="strip-root" title="Merkle root of the certificate transparency log">—</b></span>
+    </header>
+    <div id="view" tabindex="-1"></div>
+  </main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<div class="chart-tip" id="tip"></div>
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>
