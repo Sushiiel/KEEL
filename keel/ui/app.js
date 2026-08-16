@@ -1268,6 +1268,10 @@ const FEATURE_LABELS = {
 async function viewBilling(root) {
   const st = await api("/api/billing/status");
   const paid = st.valid && st.plan !== "free";
+  // the billing period comes from the server so the price shown at the moment
+  // of purchase can never disagree with what is actually charged
+  const per = (st.price && st.price.period) || "week";
+  const priceLabel = `${st.price_display}/${per}`;
   let me = null;
   try { me = await fetch("/api/auth/me").then((r) => r.json()); } catch { /* */ }
   if (me && me.email && me.email !== "default@local") {
@@ -1293,13 +1297,13 @@ async function viewBilling(root) {
       paid ? h("span", {}, "Your deployment is on the ", h("b", {}, "Team"),
         " plan. All features below are unlocked.")
            : h("span", {}, "Unlock managed hosting, hardened keys, approval-queue integrations, and the full compliance evidence workflow for ",
-        h("b", {}, `${st.price_display}/wk`), ".")));
+        h("b", {}, priceLabel), ".")));
 
   // plan card
   const feats = new Set(st.features);
   root.append(h("div", { class: "grid", style: "grid-template-columns:1.1fr 1fr;align-items:start" },
     h("div", { class: "panel" },
-      h("h3", {}, "Team · ", h("span", { style: "color:var(--brass)" }, `${st.price_display}/wk`),
+      h("h3", {}, "Team · ", h("span", { style: "color:var(--brass)" }, priceLabel),
         h("span", { class: "r" }, paid ? "active" : "not active")),
       h("div", {}, st.all_team_features.map((f) => {
         const on = feats.has(f);
@@ -1313,7 +1317,7 @@ async function viewBilling(root) {
               await post("/api/billing/deactivate"); toast("Downgraded to free"); route(); } },
               "Cancel Team")
           : h("button", { class: "primary", onclick: startCheckout },
-              `Upgrade — ${st.price_display}/mo`),
+              `Upgrade — ${priceLabel}`),
         !paid && !st.payments_live
           ? h("button", { onclick: devUnlock }, "Activate (dev / evaluation)")
           : null)),

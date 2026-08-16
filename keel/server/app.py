@@ -42,9 +42,88 @@ from ..structure.ensemble import PIN_KEY, current_graph, publish_graph
 from ..structure.discovery import CausalDiscovery, AdjacencyIndex
 from ..substrate.simulator import simulate_incident
 
+# The interactive API explorer is on for self-host/dev, but off in a hardened
+# deployment (auth required) unless explicitly enabled — so the endpoint
+# surface isn't enumerable by anonymous visitors.
+_EXPLORER = (os.environ.get("KEEL_API_EXPLORER", "").lower() in ("1", "true")
+             or os.environ.get("KEEL_AUTH_REQUIRED", "0") != "1")
+
 app = FastAPI(title="KEEL", version="0.3.0",
               description="Runtime trust layer for agentic AI",
-              docs_url="/api-explorer", redoc_url="/api-redoc")
+              docs_url="/api-explorer" if _EXPLORER else None,
+              redoc_url="/api-redoc" if _EXPLORER else None,
+              openapi_url="/openapi.json" if _EXPLORER else None)
+
+
+# ── the authentication gate ──────────────────────────────────────────────────
+# Auth must be DENY-BY-DEFAULT. Relying on each handler to remember to call
+# current_account() is how endpoints silently ship unauthenticated. Everything
+# under /api and /a2a requires a session or an account API key; the routes
+# below are the complete, explicit public surface.
+_PUBLIC_EXACT = frozenset({
+    "/", "/docs", "/app",                      # pages
+    "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml",
+    "/api/auth/config", "/api/auth/signup",    # you must be able to sign in
+    "/api/auth/login", "/api/auth/logout",
+    "/api/schema/certificate",                 # the open certificate standard
+    "/.well-known/agent-card.json",            # A2A discovery (signed, public)
+    "/api/billing/webhook",                    # provider-signature verified
+    "/api/billing/webhook/razorpay",           # provider-signature verified
+})
+_PUBLIC_PREFIXES = ("/site/", "/ui/", "/static/", "/.well-known/acme-challenge")
+_GUARDED_PREFIXES = ("/api/", "/a2a")
+
+
+@app.middleware("http")
+async def authentication_gate(request: Request, call_next):
+    """Deny-by-default authentication for the whole API surface."""
+    if not accounts.auth_required():
+        return await call_next(request)            # self-host / local mode
+    path = request.url.path
+    normalized = path.rstrip("/") or "/"
+    if (normalized in _PUBLIC_EXACT
+            or any(path.startswith(p) for p in _PUBLIC_PREFIXES)):
+        return await call_next(request)
+    if any(normalized == p.rstrip("/") or path.startswith(p)
+           for p in _GUARDED_PREFIXES):
+        auth = request.headers.get("authorization", "")
+        api_key = auth[7:] if auth.lower().startswith("bearer ") else ""
+        if accounts.resolve(session_token=request.cookies.get("keel_session", ""),
+                            api_key=api_key) is None:
+            return JSONResponse(
+                {"error": "authentication required",
+                 "hint": "sign in at /app, or send Authorization: Bearer <API key>"},
+                status_code=401)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Baseline browser hardening. A product that sells trust must not ship a
+    console that can be clickjacked or MIME-sniffed."""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy",
+                            "geolocation=(), microphone=(), camera=(), payment=()")
+    resp.headers.setdefault("Content-Security-Policy", "; ".join([
+        "default-src 'self'",
+        # inline styles/scripts are used by the console and the Firebase snippet
+        "script-src 'self' 'unsafe-inline' https://www.gstatic.com",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src 'self' https://*.googleapis.com https://*.google-analytics.com "
+        "https://*.firebaseio.com https://firebaseinstallations.googleapis.com",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+    ]))
+    if os.environ.get("KEEL_HTTPS", "0") == "1":
+        resp.headers.setdefault("Strict-Transport-Security",
+                                "max-age=31536000; includeSubDomains")
+    return resp
 
 _runtimes: dict[str, Runtime] = {}
 _locks: dict[str, threading.Lock] = {}
@@ -124,12 +203,23 @@ def _set_session(resp: Response, account: dict[str, Any]) -> None:
 def auth_config() -> dict[str, Any]:
     n = len(accounts._store().kv_get("accounts", {}))
     return {"auth_required": accounts.auth_required(),
+            "signup_mode": os.environ.get("KEEL_SIGNUP", "open").lower(),
             "has_accounts": any(e != "default@local"
                                 for e in accounts._store().kv_get("accounts", {}))}
 
 
 @app.post("/api/auth/signup")
 def auth_signup(body: dict[str, Any] = Body(...)) -> JSONResponse:
+    # KEEL_SIGNUP: open (default) · invite (needs KEEL_INVITE_CODE) · closed
+    mode = os.environ.get("KEEL_SIGNUP", "open").lower()
+    if mode == "closed":
+        raise HTTPException(403, "sign-ups are closed on this deployment")
+    if mode == "invite":
+        import hmac as _hmac
+        expected = os.environ.get("KEEL_INVITE_CODE", "")
+        if not expected or not _hmac.compare_digest(
+                str(body.get("invite_code", "")), expected):
+            raise HTTPException(403, "a valid invite code is required")
     try:
         acct = accounts.create_account(body.get("email", ""),
                                        body.get("password", ""),

@@ -43,8 +43,18 @@ def test_expired_license_is_invalid():
 
 
 def test_dev_activate_requires_code():
-    assert not billing.dev_activate(ACC, "wrong")["activated"]
-    assert billing.dev_activate(ACC, os.environ.get("KEEL_UNLOCK_CODE", "DEV-UNLOCK"))["activated"]
+    # dev unlock is a LOCAL/self-host affordance; it is refused in production
+    prev = os.environ.get("KEEL_AUTH_REQUIRED")
+    os.environ["KEEL_AUTH_REQUIRED"] = "0"
+    try:
+        assert not billing.dev_activate(ACC, "wrong")["activated"]
+        assert billing.dev_activate(
+            ACC, os.environ.get("KEEL_UNLOCK_CODE", "DEV-UNLOCK"))["activated"]
+    finally:
+        if prev is None:
+            os.environ.pop("KEEL_AUTH_REQUIRED", None)
+        else:
+            os.environ["KEEL_AUTH_REQUIRED"] = prev
 
 
 def test_price_is_ten_dollars():
