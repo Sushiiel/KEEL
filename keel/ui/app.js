@@ -1290,13 +1290,13 @@ async function viewBilling(root) {
       paid ? h("span", {}, "Your deployment is on the ", h("b", {}, "Team"),
         " plan. All features below are unlocked.")
            : h("span", {}, "Unlock managed hosting, hardened keys, approval-queue integrations, and the full compliance evidence workflow for ",
-        h("b", {}, `${st.price_display}/mo`), ".")));
+        h("b", {}, `${st.price_display}/wk`), ".")));
 
   // plan card
   const feats = new Set(st.features);
   root.append(h("div", { class: "grid", style: "grid-template-columns:1.1fr 1fr;align-items:start" },
     h("div", { class: "panel" },
-      h("h3", {}, "Team · ", h("span", { style: "color:var(--brass)" }, `${st.price_display}/mo`),
+      h("h3", {}, "Team · ", h("span", { style: "color:var(--brass)" }, `${st.price_display}/wk`),
         h("span", { class: "r" }, paid ? "active" : "not active")),
       h("div", {}, st.all_team_features.map((f) => {
         const on = feats.has(f);

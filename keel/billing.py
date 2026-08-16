@@ -26,7 +26,7 @@ from .store import Store, get_store
 PRICE_CENTS = 1000                     # $10 (Stripe / USD)
 PRICE_USD = PRICE_CENTS / 100
 PRICE_INR = float(os.environ.get("KEEL_PRICE_INR", "830"))   # ~$10 in ₹
-PLAN_DAYS = 31                         # Team is monthly
+PLAN_DAYS = 7                          # Team is weekly ($10 / ₹830 per week)
 
 
 def provider() -> str:
@@ -45,8 +45,10 @@ def provider() -> str:
 def price() -> dict[str, Any]:
     prov = provider()
     if prov == "razorpay":
-        return {"amount": PRICE_INR, "currency": "INR", "display": f"₹{PRICE_INR:.0f}"}
-    return {"amount": PRICE_USD, "currency": "USD", "display": f"${PRICE_USD:.0f}"}
+        return {"amount": PRICE_INR, "currency": "INR",
+                "display": f"₹{PRICE_INR:.0f}", "period": "week"}
+    return {"amount": PRICE_USD, "currency": "USD",
+            "display": f"${PRICE_USD:.0f}", "period": "week"}
 
 
 _LICENSE_PREFIX = "billing_license:"
@@ -162,7 +164,7 @@ def create_checkout(base_url: str, account: str = "acct_default") -> dict[str, A
             link = _razorpay_request("payment_links", {
                 "amount": int(round(PRICE_INR * 100)),   # paise
                 "currency": "INR",
-                "description": "KEEL Team (monthly unlock)",
+                "description": "KEEL Team (weekly)",
                 "notes": {"account": account, "plan": "team"},
                 "callback_url": f"{base_url}/app#/billing?checkout=success&provider=razorpay&account={account}",
                 "callback_method": "get"})
@@ -178,7 +180,7 @@ def create_checkout(base_url: str, account: str = "acct_default") -> dict[str, A
                 mode="payment",
                 line_items=[{"price_data": {
                     "currency": "usd",
-                    "product_data": {"name": "KEEL Team (monthly unlock)"},
+                    "product_data": {"name": "KEEL Team (weekly)"},
                     "unit_amount": PRICE_CENTS}, "quantity": 1}],
                 success_url=f"{base_url}/app#/billing?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{base_url}/app#/billing?checkout=cancel",

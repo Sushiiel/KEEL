@@ -43,6 +43,8 @@
       <a href="#security">Security</a>
       <a href="#compliance">Compliance</a>
       <a href="#billing">Plans &amp; billing</a>
+      <a href="#benchmarks">Verified benchmarks</a>
+      <a href="#faq">FAQ</a>
     </aside>
 
     <main class="docs-body">
@@ -271,7 +273,7 @@ helm install keel deploy/helm/keel</code></pre>
 
       <h2 id="billing">Plans &amp; billing</h2>
       <p>The engine and SDK are open and free to self-host. The <strong>Team</strong> plan
-        (₹830/mo in India via Razorpay, or $10/mo via Stripe) unlocks managed hosting, HSM-backed signing keys, approval-queue integrations
+        (₹830/week in India via Razorpay, or $10/week via Stripe) unlocks managed hosting, HSM-backed signing keys, approval-queue integrations
         (Slack/ticketing), the full &amp; scheduled evidence-pack export, and priority support.</p>
       <table>
         <tr><th>Feature</th><th>Free</th><th>Team&nbsp;(₹830 / $10 · mo)</th></tr>
@@ -301,6 +303,45 @@ export STRIPE_WEBHOOK_SECRET=whsec_...
         clearly-labeled <em>dev / evaluation</em> unlock so you can try the Team features locally.
         See <a href="#" onclick="return false">PUBLISHING.md</a> in the repo for the full release
         and payment setup.</div>
+
+      <h2 id="benchmarks">Verified benchmarks</h2>
+      <p>Every performance claim on this site is measured, not asserted. Reproduce them
+        with <code>examples/assess_gateway.py</code> against a running server.</p>
+      <table>
+        <tr><th>Claim</th><th>Measured</th></tr>
+        <tr><td>Deterministic decision latency</td><td>p50 ≈ 2.4 ms · p99 &lt; 6 ms</td></tr>
+        <tr><td>Catastrophes caught (labeled set, cold-start &amp; at earned trust)</td><td>100% (0 missed)</td></tr>
+        <tr><td>Legitimate work permanently blocked</td><td>0 false blocks</td></tr>
+        <tr><td>False positives on common dev commands</td><td>0 / 15</td></tr>
+        <tr><td>Transparency ledger integrity</td><td>chain-consistent, signatures verify</td></tr>
+        <tr><td>Test suite</td><td>71 passing (auth, isolation, security, RL, stats)</td></tr>
+      </table>
+      <div class="note">The figures cited on the home page (Gartner cancellation forecast,
+        MIT pilot-failure rate, the Salesloft/Drift breach scope) are published third-party
+        research, not KEEL measurements — they describe the problem, not the product.</div>
+
+      <h2 id="faq">FAQ</h2>
+      <h3>Is this just another approve/deny prompt?</h3>
+      <p>No. A permission prompt asks a human in the moment and leaves no record. KEEL blocks
+        catastrophes <em>without</em> asking (so no one can be tricked into approving them),
+        earns autonomy statistically so routine work stops prompting, governs every agent under
+        one policy and one signed log, and produces the audit evidence a prompt cannot.</p>
+      <h3>Does it work with my framework / language?</h3>
+      <p>Yes — any framework via the SDK or REST, and MCP-based agents (Claude Code, Cursor) via
+        the non-bypassable proxy. The guarantees never depend on the model or framework.</p>
+      <h3>What if the LLM (Gemini) is down or unset?</h3>
+      <p>The deterministic core runs with no LLM at all. The optional reviewer only ever
+        <em>lowers</em> a decision; if it's unavailable, decisions proceed on the deterministic
+        and statistical layers.</p>
+      <h3>What are the honest limits?</h3>
+      <p>Statistical bounds are marginal per-bucket, never a per-decision probability; they are
+        void under detected drift (KEEL widens or abstains); citation integrity verifies that a
+        claim traces to its evidence, not that the evidence is true. Every certificate states its
+        own scope.</p>
+      <h3>How much does it cost?</h3>
+      <p>The engine and SDK are free and self-hostable. The Team plan is <strong>$10 / week</strong>
+        (₹830 in India) and unlocks managed hosting, hardened keys, approval-queue integrations,
+        and the full compliance evidence workflow — per account.</p>
 
       <p style="margin-top:40px;color:var(--ink-3)">Questions? Open the
         <a href="/app">console</a> or read the <a href="/">product overview</a>.</p>

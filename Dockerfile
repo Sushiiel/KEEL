@@ -20,5 +20,5 @@ USER keel
 VOLUME ["/data"]
 EXPOSE 8347
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8347/healthz')"
-CMD ["keel", "serve", "--host", "0.0.0.0", "--port", "8347", "--log-level", "info"]
+  CMD python -c "import os,urllib.request as u; u.urlopen('http://127.0.0.1:'+os.environ.get('PORT',os.environ.get('KEEL_PORT','8347'))+'/healthz')"
+CMD ["keel", "serve", "--host", "0.0.0.0", "--log-level", "info"]

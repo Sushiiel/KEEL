@@ -1,0 +1,26 @@
+# fly.io deploy:  fly launch --no-deploy  then  fly deploy
+app = "keel"
+primary_region = "sin"                 # Singapore — near India
+[build]
+  dockerfile = "Dockerfile"
+[env]
+  KEEL_AUTH_REQUIRED = "1"
+  KEEL_HTTPS = "1"
+  PORT = "8347"
+[http_service]
+  internal_port = 8347
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  [[http_service.checks]]
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+[mounts]
+  source = "keel_data"
+  destination = "/data"
+# After deploy set secrets:
+#   fly secrets set KEEL_SECRET_KEY=$(openssl rand -hex 32)
+#   fly secrets set RAZORPAY_KEY_ID=... RAZORPAY_KEY_SECRET=... RAZORPAY_WEBHOOK_SECRET=...
+#   fly secrets set GEMINI_API_KEY=...

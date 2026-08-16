@@ -1,0 +1,20 @@
+# One-click deploy to Render.com — https://render.com/deploy
+services:
+  - type: web
+    name: keel
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: KEEL_AUTH_REQUIRED
+        value: "1"
+      - key: KEEL_HTTPS
+        value: "1"
+      - key: KEEL_SECRET_KEY
+        generateValue: true          # Render generates a strong secret
+      # Add RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET
+      # and GEMINI_API_KEY in the Render dashboard after deploy.
+    disk:
+      name: keel-data
+      mountPath: /data
+      sizeGB: 1

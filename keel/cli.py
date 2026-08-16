@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("serve", help="start the gateway, console, and site")
     s.add_argument("--host", default="127.0.0.1")
-    s.add_argument("--port", type=int, default=int(os.environ.get("KEEL_PORT", 8347)))
+    s.add_argument("--port", type=int, default=int(os.environ.get("PORT", os.environ.get("KEEL_PORT", 8347))))
     s.add_argument("--sandbox", action="store_true",
                    help="enable the simulated demo worlds (evaluation only)")
     s.add_argument("--data-dir", default=None, help="where to store data")
