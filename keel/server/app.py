@@ -143,10 +143,34 @@ def rt(domain: str = DEFAULT_DOMAIN) -> Runtime:
         return _runtimes[domain]
 
 
+def durability_report() -> dict[str, Any]:
+    """Will this deployment's signed artifacts survive a restart?
+
+    A file-backed key on an ephemeral filesystem is regenerated on every
+    deploy, which invalidates every certificate, the transparency root, and
+    every signed licence — while the service still looks perfectly healthy.
+    """
+    from ..config import DATA_DIR, KEY_PATH
+    key_source = "env" if os.environ.get("KEEL_SIGNING_KEY_PEM", "").strip() else "file"
+    warnings: list[str] = []
+    if key_source == "file" and accounts.auth_required():
+        warnings.append(
+            "signing key is file-backed: if this host has an ephemeral disk, every "
+            "certificate and licence becomes unverifiable on the next deploy. "
+            "Run `keel keygen` and set KEEL_SIGNING_KEY_PEM.")
+    return {"signing_key_source": key_source,
+            "data_dir": str(DATA_DIR),
+            "key_path": str(KEY_PATH) if key_source == "file" else None,
+            "durable": key_source == "env",
+            "warnings": warnings}
+
+
 @app.on_event("startup")
 def _startup() -> None:
     # nothing is seeded at startup — the product starts empty; sandbox demo
     # worlds only exist when KEEL_SANDBOX=1 and are seeded on first access
+    for _w in durability_report()["warnings"]:
+        print(f"KEEL WARNING: {_w}", flush=True)
 
     def _watch_loop():
         while True:
@@ -477,6 +501,13 @@ def sitemap() -> Response:
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {"status": "ok", "service": "keel", "version": "0.3.0"}
+
+
+@app.get("/api/ops/durability")
+def ops_durability() -> dict[str, Any]:
+    """Whether signed artifacts survive a restart. Authenticated: it reports
+    server paths, and the answer is an operational secret of sorts."""
+    return durability_report()
 
 
 @app.get("/api/domains")
