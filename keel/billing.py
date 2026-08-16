@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from typing import Any, Optional
 
 from .cert import authority
@@ -52,6 +53,7 @@ def price() -> dict[str, Any]:
 
 
 _LICENSE_PREFIX = "billing_license:"
+_USED_PAYMENTS = "billing_redeemed_payments"   # replay guard: spent payment ids
 
 
 def _lkey(account_id: str) -> str:
@@ -161,12 +163,17 @@ def create_checkout(base_url: str, account: str = "acct_default") -> dict[str, A
     prov = provider()
     if prov == "razorpay":
         try:
+            # The account is carried in reference_id because that field is
+            # INSIDE Razorpay's callback HMAC (plink|ref|status|payment_id).
+            # A query param is not, so it could be swapped after payment to
+            # credit any account — see confirm_checkout.
             link = _razorpay_request("payment_links", {
                 "amount": int(round(PRICE_INR * 100)),   # paise
                 "currency": "INR",
                 "description": "KEEL Team (weekly)",
+                "reference_id": f"{account}.{uuid.uuid4().hex[:12]}",
                 "notes": {"account": account, "plan": "team"},
-                "callback_url": f"{base_url}/app#/billing?checkout=success&provider=razorpay&account={account}",
+                "callback_url": f"{base_url}/app#/billing?checkout=success&provider=razorpay",
                 "callback_method": "get"})
             return {"mode": "razorpay", "url": link["short_url"], "id": link.get("id")}
         except Exception as e:
@@ -197,9 +204,33 @@ def create_checkout(base_url: str, account: str = "acct_default") -> dict[str, A
             "unlock_hint": "POST /api/billing/activate {\"code\": \"<KEEL_UNLOCK_CODE>\"}"}
 
 
-def confirm_checkout(params: dict[str, Any]) -> dict[str, Any]:
+def _claim_payment(reference: str) -> bool:
+    """Record a provider payment id as spent. False if already used.
+
+    Without this, one genuine payment's signed callback can be replayed to
+    activate a licence again and again — the signature stays valid forever.
+    """
+    if not reference:
+        return False
+    store = _bill_store()
+    used = list(store.kv_get(_USED_PAYMENTS) or [])
+    if reference in used:
+        return False
+    used.append(reference)
+    store.kv_set(_USED_PAYMENTS, used[-5000:])
+    return True
+
+
+def confirm_checkout(params: dict[str, Any],
+                     session_account: str = "") -> dict[str, Any]:
     """Confirm a completed payment from the return redirect and activate.
-    Routes by provider; verifies the signature; works without a webhook."""
+    Routes by provider; verifies the signature; works without a webhook.
+
+    `session_account` is the authenticated caller. The account to credit is
+    ALWAYS taken from provider-authenticated data (a signed reference, or a
+    session fetched from the provider) and cross-checked against it — never
+    from a caller-supplied field.
+    """
     import hashlib, hmac
     # ── Razorpay payment-link callback ──
     if params.get("provider") == "razorpay" or params.get("razorpay_payment_link_id"):
@@ -212,11 +243,21 @@ def confirm_checkout(params: dict[str, Any]) -> dict[str, Any]:
         expected = hmac.new(secret.encode(),
                             f"{plink}|{ref}|{pstatus}|{pid}".encode(),
                             hashlib.sha256).hexdigest()
-        if hmac.compare_digest(expected, sig) and pstatus == "paid":
-            acct = params.get("account", "acct_default")
-            lic = activate(acct, "team", source="razorpay", reference=pid)
-            return {"activated": True, "license": _public(lic)}
-        return {"activated": False, "error": "razorpay signature/status invalid"}
+        if not (secret and hmac.compare_digest(expected, sig) and pstatus == "paid"):
+            return {"activated": False, "error": "razorpay signature/status invalid"}
+        # reference_id is inside the HMAC above, so this account is authentic.
+        acct = ref.split(".", 1)[0] if ref.startswith("acct_") else ""
+        if not acct:
+            return {"activated": False,
+                    "error": "payment is not linked to an account; contact support "
+                             "with your payment id"}
+        if session_account and acct != session_account:
+            return {"activated": False,
+                    "error": "this payment belongs to a different account"}
+        if not _claim_payment(pid):
+            return {"activated": False, "error": "this payment was already redeemed"}
+        lic = activate(acct, "team", source="razorpay", reference=pid)
+        return {"activated": True, "license": _public(lic)}
     # ── Stripe checkout session ──
     session_id = params.get("session_id", "")
     key = os.environ.get("STRIPE_SECRET_KEY")
@@ -225,9 +266,20 @@ def confirm_checkout(params: dict[str, Any]) -> dict[str, Any]:
     try:
         import stripe  # type: ignore
         stripe.api_key = key
+        # Fetched from Stripe over an authenticated API call, so this metadata
+        # is authentic — unlike anything in the caller's request.
         session = stripe.checkout.Session.retrieve(session_id)
         if session.get("payment_status") == "paid":
-            acct = (session.get("metadata") or {}).get("account", "acct_default")
+            acct = (session.get("metadata") or {}).get("account", "")
+            if not acct:
+                return {"activated": False,
+                        "error": "payment is not linked to an account; contact "
+                                 "support with your session id"}
+            if session_account and acct != session_account:
+                return {"activated": False,
+                        "error": "this payment belongs to a different account"}
+            if not _claim_payment(session_id):
+                return {"activated": False, "error": "this payment was already redeemed"}
             lic = activate(acct, "team", source="stripe", reference=session_id)
             return {"activated": True, "license": _public(lic)}
         return {"activated": False, "error": "payment not completed"}
@@ -248,9 +300,13 @@ def handle_webhook(payload: bytes, sig_header: str) -> dict[str, Any]:
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         if session.get("payment_status") == "paid":
-            acct = (session.get("metadata") or {}).get("account", "acct_default")
-            activate(acct, "team", source="stripe:webhook",
-                     reference=session.get("id", ""))
+            acct = (session.get("metadata") or {}).get("account", "")
+            sid = session.get("id", "")
+            if not acct:
+                return {"ok": True, "activated": False, "error": "no account in metadata"}
+            if not _claim_payment(sid):     # Stripe retries; stay idempotent
+                return {"ok": True, "activated": False, "error": "already redeemed"}
+            activate(acct, "team", source="stripe:webhook", reference=sid)
             return {"ok": True, "activated": True}
     return {"ok": True, "activated": False, "type": event["type"]}
 
@@ -269,9 +325,17 @@ def handle_razorpay_webhook(payload: bytes, sig_header: str) -> dict[str, Any]:
         pl = event.get("payload", {})
         notes = (pl.get("payment_link", {}).get("entity", {}).get("notes")
                  or pl.get("payment", {}).get("entity", {}).get("notes") or {})
-        acct = notes.get("account", "acct_default")
-        activate(acct, "team", source="razorpay:webhook",
-                 reference=str(pl.get("payment", {}).get("entity", {}).get("id", "")))
+        # `notes` come from Razorpay inside the HMAC-verified body, so they are
+        # authentic — unlike the callback's query string.
+        acct = notes.get("account", "")
+        pid = str(pl.get("payment", {}).get("entity", {}).get("id", ""))
+        if not acct:
+            return {"ok": True, "activated": False, "error": "no account in notes"}
+        if not _claim_payment(pid):
+            # Razorpay retries webhooks; this makes activation idempotent
+            # rather than extending the licence on every redelivery.
+            return {"ok": True, "activated": False, "error": "already redeemed"}
+        activate(acct, "team", source="razorpay:webhook", reference=pid)
         return {"ok": True, "activated": True}
     return {"ok": True, "activated": False, "type": event.get("event")}
 

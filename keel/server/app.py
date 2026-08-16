@@ -303,8 +303,12 @@ def billing_checkout(request: Request,
 
 
 @app.post("/api/billing/confirm")
-def billing_confirm(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return billing.confirm_checkout(body)
+def billing_confirm(request: Request,
+                    body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    # The account credited comes from the provider-signed payment, and must
+    # match the caller — never from a field in `body`.
+    return billing.confirm_checkout(
+        body, session_account=current_account(request)["account_id"])
 
 
 @app.post("/api/billing/webhook/razorpay")
