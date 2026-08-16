@@ -2,6 +2,8 @@
    renders from the local API. */
 
 const $ = (sel, root = document) => root.querySelector(sel);
+// null-safe: the auth screen replaces <body>, so chrome elements can be absent
+const setText = (sel, value) => { const el = $(sel); if (el) el.textContent = value; };
 let DOM = localStorage.getItem("keel-domain") || "";
 const withDomain = (path) =>
   path.startsWith("/api") || path === "/a2a"
@@ -199,7 +201,7 @@ const VIEWS = [
 let PACKS = [];
 const isSandbox = () => (PACKS.find((p) => p.key === DOM) || { sandbox: true }).sandbox;
 function renderNav(active) {
-  const nav = $("#nav"); nav.innerHTML = "";
+  const nav = $("#nav"); if (!nav) return; nav.innerHTML = "";
   for (const [key, label, k] of VIEWS) {
     nav.append(h("a", { href: `#/${key}`, class: active === key ? "active" : "" },
       h("span", { class: "k" }, k), label));
@@ -210,7 +212,7 @@ document.addEventListener("keydown", (e) => {
   const v = VIEWS.find(([, , k]) => k === e.key);
   if (v) location.hash = `#/${v[0]}`;
 });
-setInterval(() => { $("#clock").textContent = new Date().toISOString().slice(11, 19) + "Z"; }, 500);
+setInterval(() => setText("#clock", new Date().toISOString().slice(11, 19) + "Z"), 500);
 
 async function initDomains() {
   const sel = $("#domain-sel");
@@ -256,25 +258,26 @@ initDomains();
 let OV = null;
 async function refreshOverview() {
   if (!DOM || DOM === "gateway") {
-    $("#foot-tenant").textContent = DOM || "no workspace";
+    setText("#foot-tenant", DOM || "no workspace");
     return;
   }
   try {
     OV = await api("/api/overview");
-    $("#foot-tenant").textContent = OV.tenant;
-    $("#strip-graph").textContent = OV.graph_version.replace("G-", "");
-    $("#strip-cal").textContent = `n=${OV.calibration_n}`;
+    setText("#foot-tenant", OV.tenant);
+    setText("#strip-graph", OV.graph_version.replace("G-", ""));
+    setText("#strip-cal", `n=${OV.calibration_n}`);
     const cov = OV.coverage?.marginal;
-    $("#strip-cov").textContent = cov == null ? "—" : `${pct(cov)} / ${pct(1 - OV.alpha)}`;
-    $("#strip-root").textContent = OV.translog_root.slice(0, 14) + "…";
+    setText("#strip-cov", cov == null ? "—" : `${pct(cov)} / ${pct(1 - OV.alpha)}`);
+    setText("#strip-root", OV.translog_root.slice(0, 14) + "…");
     const lamp = $("#foot-lamp");
-    lamp.className = `lamp ${OV.drift.level}`;
-    $("#foot-drift").textContent = OV.drift.level === "ok" ? "drift nominal" :
-      OV.drift.level === "widened" ? "drift — intervals widened" : "drift breach — abstaining";
-    $("#foot-tier").textContent = `T${OV.autonomy.tier}`;
-    $("#foot-corpus").textContent = `${OV.autonomy.successes}/${OV.autonomy.executed} actions ok`;
+    if (lamp) lamp.className = `lamp ${OV.drift.level}`;
+    setText("#foot-drift", OV.drift.level === "ok" ? "drift nominal" :
+      OV.drift.level === "widened" ? "drift — intervals widened" : "drift breach — abstaining");
+    setText("#foot-tier", `T${OV.autonomy.tier}`);
+    setText("#foot-corpus", `${OV.autonomy.successes}/${OV.autonomy.executed} actions ok`);
     if (ACCOUNT && ACCOUNT.email && ACCOUNT.email !== "default@local") {
       const ft = $("#foot-tenant");
+      if (!ft) return;
       ft.textContent = ACCOUNT.email;
       ft.style.cursor = "pointer"; ft.title = "sign out";
       ft.onclick = async () => { await fetch("/api/auth/logout", { method: "POST" }); location.reload(); };
