@@ -22,6 +22,7 @@ and learns from the outcome AFTER. Zero dependencies beyond stdlib.
 from __future__ import annotations
 
 import functools
+import os
 import json
 import time
 import urllib.error
@@ -38,18 +39,23 @@ class GuardRejected(RuntimeError):
 
 class KeelGuard:
     def __init__(self, base_url: str, agent_id: str, timeout: float = 15.0,
-                 wait_for_approval_s: float = 0.0):
+                 wait_for_approval_s: float = 0.0, api_key: str = ""):
         self.base = base_url.rstrip("/")
         self.agent_id = agent_id
         self.timeout = timeout
         self.wait_for_approval_s = wait_for_approval_s
+        # account API key (keel_ak_…) — required when the server enforces auth
+        self.api_key = api_key or os.environ.get("KEEL_API_KEY", "")
 
     # ── raw API ──────────────────────────────────────────────────────────────
     def _call(self, method: str, path: str, body: Any = None) -> Any:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(
             self.base + path, method=method,
             data=json.dumps(body).encode() if body is not None else None,
-            headers={"Content-Type": "application/json"})
+            headers=headers)
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return json.loads(r.read())
 

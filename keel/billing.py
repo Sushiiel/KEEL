@@ -275,14 +275,27 @@ def handle_razorpay_webhook(payload: bytes, sig_header: str) -> dict[str, Any]:
 
 
 def dev_activate(account_id: str, code: str) -> dict[str, Any]:
-    """Local evaluation unlock. Requires the deployment's unlock code so it is
-    not a wide-open endpoint. Never a substitute for real payment in prod."""
-    expected = os.environ.get("KEEL_UNLOCK_CODE", "DEV-UNLOCK")
-    if code != expected:
+    """Local evaluation unlock. DISABLED in production: it works only when
+    auth is not required (self-host/local) OR an explicit KEEL_UNLOCK_CODE is
+    configured. It never accepts a built-in default in a hardened deployment,
+    so it can never bypass the paywall on a real server."""
+    from . import accounts
+    configured = os.environ.get("KEEL_UNLOCK_CODE")
+    if accounts.auth_required() and not configured:
+        return {"activated": False,
+                "error": "dev activation is disabled in production; pay via the "
+                         "configured provider, or set KEEL_UNLOCK_CODE to enable"}
+    expected = configured or "DEV-UNLOCK"
+    if not code or not hmac_compare(code, expected):
         return {"activated": False, "error": "invalid unlock code"}
     lic = activate(account_id, "team", source="dev-unlock")
     return {"activated": True, "license": _public(lic),
             "note": "dev/manual activation — for evaluation, not a paid record"}
+
+
+def hmac_compare(a: str, b: str) -> bool:
+    import hmac
+    return hmac.compare_digest(a, b)
 
 
 def deactivate(account_id: str = "acct_default") -> None:

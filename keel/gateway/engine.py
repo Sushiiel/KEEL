@@ -17,6 +17,8 @@ from ..store import Store, get_store
 from .adaptive import adaptive_window, anomaly_score, observe_transition
 from .advanced import (record_allowed_outcome, risk_control_state,
                        wsr_lower_bound)
+from .bandit import recommend as bandit_recommend
+from ..integrations import adapters
 from .checkers import (check_consistency, check_destructive_intent,
                        check_grounding, check_policy, check_schema,
                        check_tripwires, clopper_pearson_lower, llm_judge)
@@ -53,9 +55,17 @@ def get_agent(agent_id: str) -> Optional[AgentProfile]:
     return AgentProfile.model_validate(raw) if raw else None
 
 
-def list_agents() -> list[AgentProfile]:
-    return [AgentProfile.model_validate(a)
-            for a in gw_store().kv_get(_AGENTS, {}).values()]
+def list_agents(account_id: str | None = None) -> list[AgentProfile]:
+    agents = [AgentProfile.model_validate(a)
+              for a in gw_store().kv_get(_AGENTS, {}).values()]
+    if account_id is None:
+        return agents
+    return [a for a in agents if (a.owner_account or "") == account_id]
+
+
+def agent_owner(agent_id: str) -> str:
+    a = get_agent(agent_id)
+    return (a.owner_account if a else "") or ""
 
 
 # ── calibration (per agent + action class) ───────────────────────────────────
@@ -209,11 +219,26 @@ def decide(req: ActionRequest) -> GatewayDecision:
             reasons += [f"advisory at {risk} risk: {c.checker} — {c.detail}"
                         for c in warns]
         else:
-            decision = "ALLOW"
-            reasons.append(f"all checks pass · calibrated floor "
-                           f"{conf.p_lower:.2f} ≥ {needed_p:.2f} · tier T{tier}")
-            if warns:
-                reasons += [f"note: {c.checker} — {c.detail}" for c in warns]
+            # RL policy: harm-constrained Thompson sampling. Advisory — it can
+            # only tighten (turn a would-be ALLOW into ESCALATE), never loosen.
+            srow = store.kv_get(_STRATA, {}).get(_stratum_key(req.agent_id, req.action_class), {})
+            rl = bandit_recommend(
+                store, conf.stratum, int(srow.get("successes", 0)),
+                int(srow.get("n", 0)) - int(srow.get("successes", 0)),
+                int(srow.get("harms", 0)), max(int(srow.get("n", 0)), 1),
+                risk, crc["harm_budget"], needed_p)
+            if not rl["allow"] and risk in ("high", "critical"):
+                decision = "ESCALATE"
+                reasons.append(f"RL policy (Thompson+Lagrangian) recommends review: "
+                               f"P(allow)={rl['p_allow']} < 0.90, λ={rl['lam']} "
+                               f"(harm-constrained)")
+            else:
+                decision = "ALLOW"
+                reasons.append(f"all checks pass · calibrated floor "
+                               f"{conf.p_lower:.2f} ≥ {needed_p:.2f} · tier T{tier} "
+                               f"· RL P(allow)={rl['p_allow']}")
+                if warns:
+                    reasons += [f"note: {c.checker} — {c.detail}" for c in warns]
 
     if req.idempotency_key:
         idem = store.kv_get(_IDEMP, {})
@@ -258,6 +283,13 @@ def _finalize(store: Store, req: ActionRequest, decision: str, risk: str,
         model_version="keel-0.3.0", created_at=time.time())
     cert = authority.issue(store, cert)
     dec.cert_id = cert.cert_id
+    # optional integrations: lineage, knowledge graph, observability
+    adapters.mlflow_log_versions({"graph": "gateway", "scm": "gateway-v1",
+                                  "model": "keel-0.3.0", "cert": cert.cert_id})
+    adapters.neo4j_sync_decision(req.agent_id, req.action_class, decision, cert.cert_id)
+    adapters.trace_decision("keel.gateway.decision",
+                            {"agent": req.agent_id, "action_class": req.action_class,
+                             "decision": decision, "risk": risk})
     decs = store.kv_get(_DECISIONS, {})
     decs[req.request_id] = dec.model_dump()
     store.kv_set(_DECISIONS, dict(list(decs.items())[-600:]))

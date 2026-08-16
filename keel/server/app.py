@@ -232,19 +232,30 @@ def integrations_get(request: Request) -> dict[str, Any]:
             "entitled": billing.has_feature(acct["account_id"], "approval_integrations")}
 
 
+_ALLOWED_HOOK_HOSTS = {"hooks.slack.com", "discord.com", "discordapp.com"}
+
+
 @app.put("/api/integrations/slack")
 def integrations_slack(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     require_feature(request, "approval_integrations")
+    url = str(body.get("webhook_url", "")).strip()
+    if url:
+        from urllib.parse import urlparse
+        u = urlparse(url)
+        if u.scheme != "https" or u.hostname not in _ALLOWED_HOOK_HOSTS:
+            raise HTTPException(400, "webhook must be an https URL on an allowed "
+                                f"host {sorted(_ALLOWED_HOOK_HOSTS)} (SSRF guard)")
     cfg = gw.gw_store().kv_get(_INTEGRATIONS, {})
-    cfg["slack_webhook"] = body.get("webhook_url", "")
+    cfg["slack_webhook"] = url
     gw.gw_store().kv_set(_INTEGRATIONS, cfg)
-    return {"ok": True, "slack": bool(cfg["slack_webhook"])}
+    return {"ok": True, "slack": bool(url)}
 
 
 def _notify_escalation(decision: dict[str, Any]) -> None:
     """Fire the configured Slack/ticketing hook when an action escalates —
     Team feature, silently skipped when unentitled or unconfigured."""
-    if decision.get("decision") != "ESCALATE" or not billing.has_feature("acct_default", "approval_integrations"):
+    owner = gw.agent_owner(decision.get("agent_id", "")) or "acct_default"
+    if decision.get("decision") != "ESCALATE" or not billing.has_feature(owner, "approval_integrations"):
         return
     cfg = gw.gw_store().kv_get(_INTEGRATIONS, {})
     hook = cfg.get("slack_webhook")
@@ -285,6 +296,12 @@ def key_mode(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, An
 
 
 # ── domains ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/integrations/status")
+def integrations_status() -> dict[str, Any]:
+    from ..integrations import status as _st
+    return _st()
+
 
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
@@ -685,15 +702,19 @@ def set_overrides(body: dict[str, Any] = Body(...),
 # ── gateway: the runtime trust layer for agentic AI ─────────────────────────
 
 @app.post("/api/gateway/agents")
-def gw_register(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def gw_register(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    acct = current_account(request, required=accounts.auth_required())
     profile = AgentProfile.model_validate(body)
+    profile.owner_account = acct["account_id"]
     return gw.register_agent(profile).model_dump(by_alias=True)
 
 
 @app.get("/api/gateway/agents")
-def gw_agents() -> list[dict[str, Any]]:
+def gw_agents(request: Request) -> list[dict[str, Any]]:
+    acct = current_account(request, required=accounts.auth_required())
+    scope = acct["account_id"] if accounts.auth_required() else None
     out = []
-    for a in gw.list_agents():
+    for a in gw.list_agents(scope):
         classes = {}
         for cls in a.action_classes:
             conf = gw.confidence_for(a.agent_id, cls)
@@ -705,8 +726,14 @@ def gw_agents() -> list[dict[str, Any]]:
 
 
 @app.post("/api/gateway/check")
-def gw_check(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def gw_check(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    acct = current_account(request, required=accounts.auth_required())
     req = ActionRequest.model_validate(body)
+    # an agent may only act under an account that owns it (when auth required)
+    if accounts.auth_required():
+        owner = gw.agent_owner(req.agent_id)
+        if owner and owner != acct["account_id"]:
+            raise HTTPException(403, "agent belongs to another account")
     dec = gw.decide(req).model_dump()
     _notify_escalation(dec)
     return dec
@@ -720,19 +747,39 @@ def gw_outcome(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return res
 
 
+def _own_agents(request: Request) -> tuple[dict, Optional[set]]:
+    acct = current_account(request, required=accounts.auth_required())
+    if not accounts.auth_required():
+        return acct, None
+    return acct, {a.agent_id for a in gw.list_agents(acct["account_id"])}
+
+
 @app.get("/api/gateway/decisions")
-def gw_decisions(limit: int = 60) -> list[dict[str, Any]]:
-    return [d.model_dump() for d in gw.recent_decisions(limit)]
+def gw_decisions(request: Request, limit: int = 60) -> list[dict[str, Any]]:
+    _, own = _own_agents(request)
+    ds = gw.recent_decisions(limit if own is None else 500)
+    ds = [d for d in ds if own is None or d.agent_id in own]
+    return [d.model_dump() for d in ds[:limit]]
 
 
 @app.get("/api/gateway/approvals")
-def gw_approvals() -> list[dict[str, Any]]:
-    return [d.model_dump() for d in gw.pending_approvals()]
+def gw_approvals(request: Request) -> list[dict[str, Any]]:
+    _, own = _own_agents(request)
+    return [d.model_dump() for d in gw.pending_approvals()
+            if own is None or d.agent_id in own]
 
 
 @app.post("/api/gateway/approvals/{request_id}")
-def gw_approve(request_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    dec = gw.approve(request_id, approver=body.get("by", "operator"),
+def gw_approve(request_id: str, request: Request,
+               body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    acct, own = _own_agents(request)
+    existing = gw.get_decision(request_id)
+    if existing is None:
+        raise HTTPException(404, "no such decision")
+    if own is not None and existing.agent_id not in own:
+        raise HTTPException(403, "not authorized to approve this decision")
+    approver = acct.get("email") or body.get("by", "operator")
+    dec = gw.approve(request_id, approver=approver,
                      allow=bool(body.get("allow", False)),
                      note=body.get("note", ""))
     if dec is None:

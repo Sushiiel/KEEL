@@ -32,6 +32,7 @@ class AgentProfile(BaseModel):
     framework: str = ""                         # langchain / openai / crewai / custom
     action_classes: dict[str, ActionClassSpec] = Field(default_factory=dict)
     created_at: float = Field(default_factory=time.time)
+    owner_account: str = ""                     # account that owns this agent
     shadow_mode: bool = True                    # SHADOW-FIRST: observe, sign,
                                                 # flag would-have-blocked; only
                                                 # tripwires enforce on day one
