@@ -72,3 +72,24 @@ def test_grounding_check_never_reads_evidence_source():
     # /etc/passwd was never read (content stays empty)
     assert req.evidence[0].content == ""
     assert res.verdict == "fail"
+
+
+def test_no_bare_json_404_for_browsers():
+    """A person must never see a raw {"detail":"Not Found"} — regression guard."""
+    from fastapi.testclient import TestClient
+    from keel.server.app import app
+    c = TestClient(app)
+    # browser path → real HTML 404 page
+    r = c.get("/some-typo")
+    assert r.status_code == 404 and "text/html" in r.headers["content-type"]
+    assert "doesn't exist" in r.text
+    # API path → machine-readable JSON
+    r = c.get("/api/nope")
+    assert r.status_code == 404 and r.json()["error"] == "not found"
+    # favicon exists (browsers request it on every page load)
+    assert c.get("/favicon.ico").status_code == 200
+    # common typed paths redirect instead of 404ing
+    for path, dest in [("/pricing", "/#pricing"), ("/login", "/app"),
+                       ("/documentation", "/docs"), ("/upgrade", "/app#/billing")]:
+        r = c.get(path, follow_redirects=False)
+        assert r.status_code == 307 and r.headers["location"] == dest, path

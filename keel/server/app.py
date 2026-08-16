@@ -16,8 +16,8 @@ from typing import Any, Optional
 
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import (FileResponse, JSONResponse, Response,
-                               StreamingResponse)
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse, Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 from ..calibrate.conformal import corpus, empirical_coverage
@@ -301,6 +301,69 @@ def key_mode(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, An
 def integrations_status() -> dict[str, Any]:
     from ..integrations import status as _st
     return _st()
+
+
+_FAVICON = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<rect width='32' height='32' rx='6' fill='%23FFFFFF' stroke='%23DDE2D9'/>"
+    "<path d='M8 6v20M8 16l12-10M8 16l12 10' stroke='%232F49C9' stroke-width='2.6' "
+    "fill='none' stroke-linecap='round'/></svg>")
+
+# paths people actually type or that other sites link to → send them somewhere real
+_FRIENDLY_REDIRECTS = {
+    "/index.html": "/", "/home": "/", "/start": "/",
+    "/pricing": "/#pricing", "/price": "/#pricing", "/plans": "/#pricing",
+    "/features": "/#features", "/use-cases": "/#use-cases",
+    "/login": "/app", "/signin": "/app", "/sign-in": "/app",
+    "/signup": "/app", "/sign-up": "/app", "/register": "/app",
+    "/console": "/app", "/dashboard": "/app", "/gateway": "/app#/gateway",
+    "/billing": "/app#/billing", "/upgrade": "/app#/billing",
+    "/documentation": "/docs", "/doc": "/docs", "/help": "/docs",
+    "/api": "/docs#api", "/sdk": "/docs#sdk", "/quickstart": "/docs#quickstart",
+    "/github": "https://github.com/Sushiiel/KEEL",
+}
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    return Response(_FAVICON, media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.exception_handler(404)
+async def not_found(request: Request, exc) -> Response:
+    """Never show a bare JSON 'Not Found' to a person. APIs get JSON; browsers
+    get a redirect to the right page, or a real 404 page with a way out."""
+    path = request.url.path.rstrip("/") or "/"
+    target = _FRIENDLY_REDIRECTS.get(path.lower())
+    if target:
+        return RedirectResponse(target, status_code=307)
+    if path.startswith(("/api", "/a2a", "/.well-known")):
+        return JSONResponse({"error": "not found", "path": path,
+                             "docs": "https://keel.best/docs"}, status_code=404)
+    return HTMLResponse(_404_PAGE, status_code=404)
+
+
+_404_PAGE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Page not found — KEEL</title><link rel="stylesheet" href="/site/site.css">
+</head><body>
+<header class="nav"><div class="wrap">
+  <a href="/" class="brand" style="text-decoration:none">KE<b>E</b>L</a>
+  <nav><a href="/">Home</a><a href="/docs">Docs</a><a href="/app">Console</a></nav>
+  <span class="spacer"></span><a href="/app" class="btn primary">Open console &rarr;</a>
+</div></header>
+<section class="hero"><div class="wrap">
+  <span class="eyebrow">404</span>
+  <h1>That page doesn't exist.</h1>
+  <p class="lede">The link may be out of date. Everything KEEL does lives in one of
+  these three places.</p>
+  <div class="cta">
+    <a href="/" class="btn primary">Product overview</a>
+    <a href="/docs" class="btn">Documentation</a>
+    <a href="/app" class="btn">Operator console</a>
+  </div>
+</div></section></body></html>"""
 
 
 @app.get("/robots.txt")
