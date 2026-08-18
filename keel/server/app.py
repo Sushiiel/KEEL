@@ -70,6 +70,8 @@ _PUBLIC_EXACT = frozenset({
     "/api/auth/login", "/api/auth/logout",
     "/api/schema/certificate",                 # the open certificate standard
     "/.well-known/agent-card.json",            # A2A discovery (signed, public)
+    "/api/gateway/checkpoint",                 # signed log checkpoint: public so
+                                               # outsiders can hold us to our log
 })
 _PUBLIC_PREFIXES = ("/site/", "/ui/", "/static/", "/.well-known/acme-challenge")
 _GUARDED_PREFIXES = ("/api/", "/a2a")
@@ -1028,6 +1030,83 @@ def gw_approve(request_id: str, request: Request,
     if dec is None:
         raise HTTPException(404, "no pending escalation for that request")
     return dec.model_dump()
+
+
+# ── agent passports: portable, verifiable trust records ─────────────────────
+
+@app.post("/api/gateway/agents/{agent_id}/passport")
+def gw_passport_issue(agent_id: str, request: Request) -> dict[str, Any]:
+    """Sign this agent's earned record for presentation to another deployment.
+    Owner-only: a track record is the agent operator's to carry, not anyone's
+    to harvest."""
+    from ..gateway import passport as pp
+    acct = current_account(request, required=accounts.auth_required())
+    if accounts.auth_required() and gw.agent_owner(agent_id) != acct["account_id"]:
+        raise HTTPException(404, "no such agent under this account")
+    out = pp.issue_passport(agent_id)
+    if out is None:
+        raise HTTPException(404, "no such agent")
+    return out
+
+
+@app.post("/api/gateway/passport/import")
+def gw_passport_import(request: Request,
+                       body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Adopt a foreign agent's verified record as a discounted prior.
+
+    `issuer_key` is mandatory and must come from the issuing deployment
+    out-of-band — a passport is never allowed to vouch for itself.
+    """
+    from ..gateway import passport as pp
+    acct = current_account(request, required=accounts.auth_required())
+    res = pp.adopt_passport(body.get("passport") or {},
+                            str(body.get("issuer_key", "")),
+                            owner_account=acct["account_id"])
+    if not res.get("adopted"):
+        raise HTTPException(400, res)
+    return res
+
+
+# ── counterfactual policy replay ─────────────────────────────────────────────
+
+@app.post("/api/gateway/replay")
+def gw_replay(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Diff a candidate policy against this account's recorded decisions —
+    the impact report that should precede every policy change."""
+    from ..gateway import replay as rp
+    acct = current_account(request, required=accounts.auth_required())
+    scope = acct["account_id"] if accounts.auth_required() else None
+    res = rp.replay(body, account_id=scope)
+    if "error" in res:
+        raise HTTPException(400, res)
+    return res
+
+
+# ── signed log checkpoints (public by design) ────────────────────────────────
+
+_CKPT_CACHE: dict[str, Any] = {"at": 0.0, "value": None}
+_CKPT_TTL = 10.0    # anonymous hammering costs at most one root rebuild per TTL
+
+
+@app.get("/api/gateway/checkpoint")
+def gw_checkpoint() -> dict[str, Any]:
+    """A signed (size, root, time) statement of the transparency log.
+
+    Deliberately public and unauthenticated: the entire point is that OUTSIDE
+    parties fetch and retain these, so the deployment can be held to its log.
+    It reveals only the log's size and root — no tenant content. Two signed
+    checkpoints of equal size with different roots are non-repudiable proof
+    of tampering (`keel checkpoint compare`).
+
+    Cached briefly: computing the root walks the whole log, and an anonymous
+    endpoint must not hand strangers an O(n) CPU amplifier. A few seconds of
+    staleness is immaterial to witnesses comparing checkpoints hours apart.
+    """
+    now = time.time()
+    if _CKPT_CACHE["value"] is None or now - _CKPT_CACHE["at"] > _CKPT_TTL:
+        _CKPT_CACHE["value"] = translog.signed_checkpoint(gw.gw_store())
+        _CKPT_CACHE["at"] = now
+    return _CKPT_CACHE["value"]
 
 
 @app.get("/api/gateway/audit-pack")

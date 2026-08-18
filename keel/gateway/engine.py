@@ -98,6 +98,30 @@ def confidence_for(agent_id: str, action_class: str,
         sufficient=n >= MIN_OUTCOMES and not (drifted and n < 2 * MIN_OUTCOMES))
 
 
+def passport_prior(agent_id: str, action_class: str) -> Optional[dict[str, Any]]:
+    """The discounted prior adopted from a verified agent passport, if any.
+
+    Returns {p_lower, n_eff, issuer} or None. The bound is Clopper-Pearson on
+    the DISCOUNTED counts — foreign evidence pays a transfer price before it
+    counts for anything. A record containing any harm confers no prior at all:
+    a passport is a bridge over cold start, never a pardon.
+    """
+    s = gw_store().kv_get(_STRATA, {}).get(_stratum_key(agent_id, action_class))
+    pp = (s or {}).get("passport")
+    if not pp or int(pp.get("harms", 0)) > 0:
+        return None
+    # a passport's validity window applies at USE time, not just adoption:
+    # a record issued 90+ days ago is stale evidence and confers nothing
+    issued = float(pp.get("issued_at", 0))
+    if time.time() > issued + 90 * 86400:
+        return None
+    n_eff, s_eff = int(pp.get("n_eff", 0)), int(pp.get("successes_eff", 0))
+    if n_eff < MIN_OUTCOMES:
+        return None
+    return {"p_lower": round(clopper_pearson_lower(s_eff, n_eff), 4),
+            "n_eff": n_eff, "issuer": pp.get("issuer", "")}
+
+
 def earned_tier(agent_id: str, action_class: str) -> int:
     """T1 by default; T2/T3 earned from this stratum's own outcomes."""
     s = gw_store().kv_get(_STRATA, {}).get(_stratum_key(agent_id, action_class))
@@ -190,15 +214,51 @@ def decide(req: ActionRequest) -> GatewayDecision:
                            f"exceeds budget {crc['harm_budget']} for {risk}-risk "
                            f"ALLOWs — floor tightened to {needed_p:.2f}")
         if not conf.sufficient:
+            # A verified passport may bridge cold start for MEDIUM risk only —
+            # and never with MORE latitude than locally earned trust gets:
+            #   - it must clear needed_p, the SAME risk-control-tightened floor
+            #     a calibrated ALLOW clears, not the static base floor
+            #   - any local disconfirming evidence vetoes it: a failure in the
+            #     window or a drift flag means the foreign prior is exactly the
+            #     evidence least likely to transfer
+            #   - it still falls through the destructive-intent gate below,
+            #     like every other path to ALLOW
+            pp = passport_prior(req.agent_id, req.action_class) \
+                if risk == "medium" else None
+            bridge_ok = (pp is not None
+                         and pp["p_lower"] >= needed_p
+                         and conf.n < MIN_OUTCOMES
+                         and conf.successes == conf.n
+                         and "post-drift" not in (conf.stratum or ""))
             if risk == "low":
                 decision = "ALLOW"
                 reasons.append(f"cold start (n={conf.n}<{MIN_OUTCOMES}) permitted "
                                "for low-risk class; outcomes will calibrate it")
+            elif bridge_ok:
+                if any(c.checker == "destructive_intent" for c in warns):
+                    decision = "ESCALATE"
+                    reasons.append(
+                        "novel destructive action requires human review — a "
+                        "passport bridges calibration, never the destruction "
+                        "gate: " + next(c.detail for c in warns
+                                        if c.checker == "destructive_intent"))
+                else:
+                    decision = "ALLOW"
+                    reasons.append(
+                        f"cold start bridged by verified agent passport "
+                        f"(issuer {pp['issuer']}…): discounted prior "
+                        f"p⩾{pp['p_lower']:.2f} over n_eff={pp['n_eff']} clears "
+                        f"the {needed_p:.2f} floor in force for medium risk; "
+                        "local outcomes will supersede it")
             else:
                 decision = "ESCALATE"
                 reasons.append(f"no calibration yet for this agent+class "
                                f"(n={conf.n}<{MIN_OUTCOMES}); {risk}-risk actions "
                                "require a human until the track record exists")
+                if pp is not None and not bridge_ok:
+                    reasons.append(
+                        "an adopted passport was disregarded: local evidence, "
+                        "drift, or a tightened floor overrides imported trust")
         elif (conf.p_lower or 0.0) < needed_p:
             decision = "ESCALATE"
             reasons.append(f"calibrated success floor {conf.p_lower:.2f} below the "

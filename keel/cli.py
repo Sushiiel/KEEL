@@ -88,6 +88,53 @@ def _verify(args: argparse.Namespace) -> None:
     sys.exit(0 if report["valid"] else 1)
 
 
+def _passport_verify(args: argparse.Namespace) -> None:
+    """Verify an agent passport offline — the receiving side's due diligence."""
+    import json as _json
+
+    from .gateway.passport import verify_passport
+    with open(args.passport) as f:
+        passport = _json.load(f)
+    report = verify_passport(passport, args.key or "")
+    print(f"agent       : {report.get('agent_id') or '(unknown)'}")
+    for name, ok in report.get("checks", {}).items():
+        print(f"  {'✓' if ok else '✗'} {name}")
+    if not report.get("key_pinned") and report.get("valid"):
+        # internally consistent, but the document is vouching for itself —
+        # an attacker can mint one with any key. Never exit 0 for that: this
+        # command's exit code will end up inside someone's automation, and an
+        # automated gate that passes self-signed trust is worse than none.
+        print("result      : UNPINNED — internally consistent, but verified "
+              "against the key embedded in the passport itself. Anyone can "
+              "mint such a document. Pass --key with the issuer's key obtained "
+              "out-of-band; refusing to treat this as success.")
+        sys.exit(1)
+    print("result      : " + ("VALID" if report.get("valid") else "NOT VALID"))
+    sys.exit(0 if report.get("valid") else 1)
+
+
+def _checkpoint_compare(args: argparse.Namespace) -> None:
+    """Compare two signed log checkpoints; detect forks and truncation."""
+    import json as _json
+
+    from .cert.verifier import compare_checkpoints
+    with open(args.older) as f:
+        older = _json.load(f)
+    with open(args.newer) as f:
+        newer = _json.load(f)
+    key = (args.key or os.environ.get("KEEL_PUBLIC_KEY", "")
+           or str(older.get("public_key", ""))).strip()
+    report = compare_checkpoints(older, newer, key)
+    print(f"older       : size {older.get('size')}  root {str(older.get('root'))[:16]}…")
+    print(f"newer       : size {newer.get('size')}  root {str(newer.get('root'))[:16]}…")
+    print(f"verdict     : {report.get('verdict')}")
+    print(f"detail      : {report.get('detail')}")
+    # only proven misbehaviour and unverifiable input are failures; growth is
+    # the normal, healthy case
+    sys.exit(0 if report.get("verdict") in ("IDENTICAL", "APPEND-CONSISTENT")
+             else 1)
+
+
 def _keygen(args: argparse.Namespace) -> None:
     """Print a fresh authority signing key for KEEL_SIGNING_KEY_PEM."""
     from .cert.authority import export_private_pem
@@ -136,6 +183,25 @@ def main(argv: list[str] | None = None) -> int:
                    help="pin the expected transparency-log root (hex)")
     v.add_argument("--json", action="store_true", help="machine-readable report")
     v.set_defaults(func=_verify)
+
+    pv = sub.add_parser("passport",
+                        help="agent passports: portable, verifiable trust records")
+    psub = pv.add_subparsers(dest="passport_cmd")
+    pvv = psub.add_parser("verify", help="verify a passport offline")
+    pvv.add_argument("passport", help="path to a passport JSON")
+    pvv.add_argument("--key", default="",
+                     help="issuer public key hex, obtained out-of-band")
+    pvv.set_defaults(func=_passport_verify)
+
+    cp = sub.add_parser("checkpoint",
+                        help="signed transparency-log checkpoints")
+    csub = cp.add_subparsers(dest="checkpoint_cmd")
+    cpc = csub.add_parser("compare",
+                          help="compare two checkpoints; detect forks/truncation")
+    cpc.add_argument("older", help="earlier checkpoint JSON")
+    cpc.add_argument("newer", help="later checkpoint JSON")
+    cpc.add_argument("--key", default="", help="authority public key hex")
+    cpc.set_defaults(func=_checkpoint_compare)
 
     k = sub.add_parser("keygen",
                        help="generate the authority signing key (KEEL_SIGNING_KEY_PEM)")

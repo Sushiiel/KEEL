@@ -88,6 +88,26 @@ class KeelGuard:
             "request_id": request_id, "success": success,
             "detail": detail, "harm": harm})
 
+    # ── portable trust ──────────────────────────────────────────────────────
+    def export_passport(self) -> dict[str, Any]:
+        """This agent's earned record, signed for presentation to another
+        KEEL deployment. Verify on the receiving side with
+        `keel passport verify` before adopting."""
+        return self._call("POST", f"/api/gateway/agents/{self.agent_id}/passport")
+
+    def import_passport(self, passport: dict[str, Any],
+                        issuer_key: str) -> dict[str, Any]:
+        """Adopt a foreign agent's verified record as a discounted prior.
+        `issuer_key` must come from the issuing deployment out-of-band."""
+        return self._call("POST", "/api/gateway/passport/import",
+                          {"passport": passport, "issuer_key": issuer_key})
+
+    def replay_policy(self, **changes: Any) -> dict[str, Any]:
+        """Diff a candidate policy against this account's recorded decisions
+        before shipping it. Knobs: risk_overrides, floor_delta, tier_req,
+        enforce_shadow."""
+        return self._call("POST", "/api/gateway/replay", changes)
+
     def _await_approval(self, request_id: str) -> dict[str, Any] | None:
         deadline = time.time() + self.wait_for_approval_s
         while time.time() < deadline:

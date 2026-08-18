@@ -77,6 +77,65 @@ def verify_inclusion(leaf: str, path: list[dict[str, str]], root: str) -> bool:
         return False
 
 
+def verify_checkpoint(cp: dict[str, Any], public_key_hex: str) -> bool:
+    """Is this signed log checkpoint authentic? Pure and offline."""
+    if cp.get("schema") != "keel-checkpoint/v1":
+        return False
+    # log_index/log_root are excluded from the shared canonicalization; a
+    # checkpoint never carries them, so treat their presence as forgery
+    if "log_index" in cp or "log_root" in cp:
+        return False
+    return verify_signature(cp, public_key_hex)
+
+
+def compare_checkpoints(older: dict[str, Any], newer: dict[str, Any],
+                        public_key_hex: str) -> dict[str, Any]:
+    """Split-view / rewrite detection between two signed checkpoints.
+
+    What this proves, exactly:
+      - equal sizes with different roots → the log was REWRITTEN or FORKED,
+        and both statements carry the authority's own signature: proof of
+        misbehaviour that the deployment cannot disown.
+      - shrinking size → entries were dropped: same class of proof.
+      - growth with a changed root is CONSISTENT WITH honest append but is not
+        proof of it — full RFC 6962 consistency proofs between sizes are not
+        implemented, and this function will not pretend otherwise.
+    """
+    a_ok = verify_checkpoint(older, public_key_hex)
+    b_ok = verify_checkpoint(newer, public_key_hex)
+    report: dict[str, Any] = {"older_signature": a_ok, "newer_signature": b_ok}
+    if not (a_ok and b_ok):
+        report["verdict"] = "UNVERIFIABLE"
+        report["detail"] = "one or both signatures failed — nothing can be concluded"
+        return report
+    # order by the SIGNED timestamps, not by which file the caller passed
+    # first — a swapped argument order must not turn an honest append into a
+    # "truncation proof"
+    if float(newer.get("ts", 0)) < float(older.get("ts", 0)):
+        older, newer = newer, older
+        report["reordered_by_ts"] = True
+    sa, sb = int(older.get("size", -1)), int(newer.get("size", -1))
+    ra, rb = older.get("root"), newer.get("root")
+    if sa == sb and ra != rb:
+        report["verdict"] = "FORK-PROOF"
+        report["detail"] = (f"two authority-signed checkpoints at size {sa} "
+                            "have different roots: the log was rewritten. "
+                            "Keep both files — together they are the evidence.")
+    elif sb < sa:
+        report["verdict"] = "TRUNCATION-PROOF"
+        report["detail"] = (f"log shrank from {sa} to {sb} entries between "
+                            "signed checkpoints: entries were dropped.")
+    elif sa == sb:
+        report["verdict"] = "IDENTICAL"
+        report["detail"] = f"same size ({sa}) and same root — no divergence."
+    else:
+        report["verdict"] = "APPEND-CONSISTENT"
+        report["detail"] = (f"log grew {sa} → {sb}. Consistent with honest "
+                            "append; not cryptographic proof of it (no "
+                            "consistency proof between sizes is checked).")
+    return report
+
+
 def verify(bundle: dict[str, Any], public_key_hex: str,
            expected_root: str | None = None) -> dict[str, Any]:
     """Verify a certificate bundle offline. Returns a full report, never raises.

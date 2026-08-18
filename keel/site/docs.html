@@ -41,6 +41,10 @@
       <a href="#decisions">Decisions &amp; verdicts</a>
       <a href="#autonomy">Earned autonomy</a>
       <a href="#certificates">Certificates &amp; ledger</a>
+      <h4>Advanced</h4>
+      <a href="#passports">Agent passports</a>
+      <a href="#replay">Policy replay</a>
+      <a href="#checkpoints">Log checkpoints</a>
       <h4>Integrate</h4>
       <a href="#sdk">Python SDK</a>
       <a href="#api">REST API</a>
@@ -203,6 +207,61 @@ keel verify cert.json --key &lt;authority_public_key_hex&gt;
         deliberately dependency-free (<code>keel/cert/verifier.py</code>) so it can be reviewed
         and vendored by a third party.</p>
 
+      <h2 id="passports">Agent passports — trust that travels</h2>
+      <p>Cold start is where every trust system fails: an agent with thousands of verified
+        outcomes behind one deployment starts from zero everywhere else. A <strong>passport</strong>
+        is the agent's earned record — per action class: n, successes, harms, externally-verified
+        count — signed by the issuing deployment's authority and verifiable offline like any KEEL
+        artifact.</p>
+      <pre><code># issuing side: export the agent's earned record
+curl -s -X POST "$KEEL_URL/api/gateway/agents/support-bot/passport" \
+  -H "Authorization: Bearer $KEEL_API_KEY" > passport.json
+
+# receiving side: due diligence, then adopt with the issuer's key
+keel passport verify passport.json --key &lt;issuer_public_key_hex&gt;
+curl -s -X POST "$KEEL_URL/api/gateway/passport/import" \
+  -H "Authorization: Bearer $KEEL_API_KEY" -H 'Content-Type: application/json' \
+  -d "{\"passport\": $(cat passport.json), \"issuer_key\": \"&lt;hex&gt;\"}"</code></pre>
+      <p>The statistical rules are the point, and they are deliberately conservative:</p>
+      <ul>
+        <li>Imported evidence is <strong>discounted 50% and capped</strong>, then held to the same
+          Clopper-Pearson bound as local evidence — a foreign record pays a transfer price.</li>
+        <li>It can bridge cold start for <strong>medium-risk actions only</strong>. High and
+          critical actions require locally earned evidence, always.</li>
+        <li><strong>Tiers are never imported</strong>, a record containing any harm confers no
+          benefit, and a passport can never vouch for itself — adoption requires the issuer's
+          key obtained out-of-band.</li>
+      </ul>
+
+      <h2 id="replay">Counterfactual policy replay — change policy with proof</h2>
+      <p>Before you tighten or loosen anything, ask what the change <em>would have done</em> to
+        the decisions your agents actually faced. Replay re-runs your recorded decision evidence
+        under a candidate policy — no side effects, nothing stored — and returns the diff.</p>
+      <pre><code>curl -s -X POST "$KEEL_URL/api/gateway/replay" \
+  -H "Authorization: Bearer $KEEL_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"risk_overrides": {"issue_refund": "high"}, "floor_delta": 0.05}'
+# → {"replayed": 412, "transitions": {"ALLOW→ESCALATE": 17, ...},
+#    "summary": {"would_tighten": 17, "would_loosen": 0}, "flips": [...]}</code></pre>
+      <p>Knobs: <code>risk_overrides</code> (reclassify an action class),
+        <code>floor_delta</code> (raise every success-floor), <code>tier_req</code> (change the
+        tier required per risk), <code>enforce_shadow</code> (preview what shadow-mode exit would
+        do). Unknown knobs are an error, never a silent no-op. Every report states its limits:
+        replay is evidence-preserving, not behaviour-preserving, and the adaptive advisory layers
+        only ever tighten — so its ALLOW counts are an upper bound.</p>
+
+      <h2 id="checkpoints">Signed log checkpoints — hold us to our log</h2>
+      <p><code>GET /api/gateway/checkpoint</code> is <strong>public</strong> and returns a signed
+        <code>(size, root, time)</code> statement of the transparency log. Fetch and keep them —
+        no account needed. Two authority-signed checkpoints of the same size with different roots
+        are non-repudiable proof the log was rewritten; a shrinking size is proof entries were
+        dropped.</p>
+      <pre><code>curl -s $KEEL_URL/api/gateway/checkpoint > monday.json
+curl -s $KEEL_URL/api/gateway/checkpoint > friday.json
+keel checkpoint compare monday.json friday.json --key &lt;authority_key_hex&gt;
+# verdict: APPEND-CONSISTENT · FORK-PROOF · TRUNCATION-PROOF</code></pre>
+      <p>The comparison never over-claims: growth is reported as <em>consistent with</em> honest
+        append, not proof of it.</p>
+
       <h2 id="sdk">Python SDK</h2>
       <p><code>keel.sdk.KeelGuard(base_url, agent_id, wait_for_approval_s=0)</code></p>
       <table>
@@ -215,6 +274,12 @@ keel verify cert.json --key &lt;authority_public_key_hex&gt;
           <td>Report what happened after an allowed action.</td></tr>
         <tr><td class="mono">@protect(action_class, cost=…, targets=…)</td>
           <td>Decorator: wraps a function so it runs only on ALLOW and auto-reports the outcome.</td></tr>
+        <tr><td class="mono">export_passport()</td>
+          <td>This agent's earned record, signed for another deployment.</td></tr>
+        <tr><td class="mono">import_passport(passport, issuer_key)</td>
+          <td>Adopt a foreign record as a discounted prior (key obtained out-of-band).</td></tr>
+        <tr><td class="mono">replay_policy(risk_overrides=…, floor_delta=…)</td>
+          <td>Diff a candidate policy against recorded decisions before shipping it.</td></tr>
       </table>
 
       <h2 id="api">REST API</h2>
@@ -238,7 +303,10 @@ keel verify cert.json --key &lt;authority_public_key_hex&gt;
         <tr><td><span class="method">POST</span><code>/api/webhook/alertmanager</code></td>
           <td>Ingest Prometheus Alertmanager events (ops vertical).</td></tr>
       </table>
-      <p>Every <code>/api</code> endpoint requires your account key. Without the
+      <p>Every <code>/api</code> endpoint requires your account key, with three deliberate
+        exceptions that exist to be read by strangers: the sign-in routes, the open certificate
+        schema (<code>/api/schema/certificate</code>), and the signed log checkpoint
+        (<code>/api/gateway/checkpoint</code>). Without the
         <code>Authorization</code> header the server returns <code>401</code>.</p>
       <pre><code>curl -X POST "$KEEL_URL/api/gateway/check" \
   -H "Authorization: Bearer $KEEL_API_KEY" \

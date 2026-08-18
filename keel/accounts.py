@@ -164,13 +164,19 @@ def account_from_session(token: str) -> Optional[dict[str, Any]]:
 
 
 def resolve(session_token: str = "", api_key: str = "") -> Optional[dict[str, Any]]:
-    """Return the account for a request, honoring the auth mode."""
-    if session_token:
-        acct = account_from_session(session_token)
-        if acct:
-            return acct
+    """Return the account for a request, honoring the auth mode.
+
+    An explicit Authorization header outranks the ambient session cookie: the
+    header is a deliberate, per-request identity choice, while a cookie rides
+    along with whatever the client last signed in as. With the old order, a
+    tool holding both silently acted as the cookie's account.
+    """
     if api_key:
         acct = account_by_api_key(api_key)
+        if acct:
+            return acct
+    if session_token:
+        acct = account_from_session(session_token)
         if acct:
             return acct
     if not auth_required():

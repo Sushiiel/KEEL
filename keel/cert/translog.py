@@ -90,6 +90,30 @@ def verify_inclusion(leaf: str, proof: list[dict[str, str]], root: str) -> bool:
     return acc == root
 
 
+def signed_checkpoint(store: Store) -> dict[str, Any]:
+    """A signed (size, root, time) statement — the log going on the record.
+
+    Publishing these is what turns "trust our log" into "hold us to our log":
+    anyone may fetch and keep checkpoints, and two signed checkpoints of the
+    same size with different roots are non-repudiable, court-grade proof that
+    the log was rewritten or forked. The deployment cannot later disown one —
+    the signature is its own.
+    """
+    import json as _json
+    import time as _time
+
+    from . import authority
+    cp = {"schema": "keel-checkpoint/v1",
+          "size": len(store.translog()),
+          "root": current_root(store),
+          "ts": _time.time(),
+          "signer": authority.SIGNER_ID,
+          "public_key": authority.public_key_hex()}
+    payload = _json.dumps(cp, sort_keys=True, separators=(",", ":")).encode()
+    cp["signature"] = authority.signing_key().sign(payload).hex()
+    return cp
+
+
 def verify_chain(store: Store) -> dict[str, Any]:
     """Recompute every leaf from its stored certificate; detect tampering."""
     from .authority import canonical_payload      # local import, no cycle at load
