@@ -155,8 +155,6 @@ section > .wrap > p.sub { color: var(--ink-2); font-size: 17px; max-width: 64ch;
    sales tactic dressed as information. */
 .tier.feat { border: 2px solid var(--cobalt); position: relative; }
 .tier h3 { font-family: var(--disp); font-weight: 700; font-size: 20px; }
-.tier .price { font-family: var(--disp); font-weight: 700; font-size: 30px; margin: 8px 0 4px; }
-.tier .price small { font-size: 14px; color: var(--ink-3); font-weight: 500; }
 .tier ul { list-style: none; margin: 18px 0; display: grid; gap: 10px; }
 .tier li { font-size: 14px; color: var(--ink-2); padding-left: 24px; position: relative; }
 .tier li::before { content: "✓"; position: absolute; left: 0; color: var(--good); font-weight: 700; }

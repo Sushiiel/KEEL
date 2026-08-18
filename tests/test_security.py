@@ -80,7 +80,7 @@ def test_no_bare_json_404_for_browsers():
     # favicon exists (browsers request it on every page load)
     assert c.get("/favicon.ico").status_code == 200
     # common typed paths redirect instead of 404ing
-    for path, dest in [("/pricing", "/#pricing"), ("/login", "/app"),
+    for path, dest in [("/pricing", "/#different"), ("/login", "/app"),
                        ("/documentation", "/docs"), ("/upgrade", "/app#/account")]:
         r = c.get(path, follow_redirects=False)
         assert r.status_code == 307 and r.headers["location"] == dest, path

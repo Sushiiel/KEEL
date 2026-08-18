@@ -25,7 +25,7 @@
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
       <a href="#use-cases">Use cases</a>
-      <a href="#pricing">Pricing</a>
+      <a href="#different">Why KEEL</a>
       <a href="/docs">Docs</a>
     </nav>
     <span class="spacer"></span>
@@ -214,34 +214,30 @@ guard.<span class="f">register</span>(name=<span class="s">"My Agent"</span>, ac
   </div>
 </section>
 
-<!-- PRICING -->
-<section id="pricing">
+<!-- WHY KEEL IS DIFFERENT — there is no pricing section because there is no price -->
+<section id="different">
   <div class="wrap">
-    <div class="section-tag">Pricing</div>
-    <h2>Free. All of it, for everyone.</h2>
-    <p class="sub">Every capability below is included at no cost — self-hosted or on the
-      managed service. There is no paid tier, no licence to buy, and no card to enter.</p>
+    <div class="section-tag">Why KEEL is different</div>
+    <h2>Guardrails give you a yes or no. KEEL gives you proof.</h2>
+    <p class="sub">Every capability is free for everyone — self-hosted or managed, no tiers,
+      no licence, no card. What sets KEEL apart is not a plan, it's the architecture.</p>
     <div class="tiers">
-      <div class="tier feat"><h3>Everything</h3>
-        <div class="price">Free</div><small>self-hosted or managed</small>
-        <ul><li>Full gateway &amp; SDK</li><li>All checkers &amp; calibration</li>
-          <li>Signed transparency log</li><li>MCP proxy &amp; REST API</li>
-          <li>Managed, HA hosting</li><li>Hardened signing-key custody</li>
-          <li>Approval queue integrations (Slack, ticketing)</li>
-          <li>Evidence-pack export &amp; scheduling</li>
-          <li>SSO, RBAC, private deployment</li>
-          <li>WORM retention &amp; SCITT export</li>
-          <li>Auditor &amp; insurer evidence workflow</li>
-          <li>Custom tripwire &amp; policy sets</li></ul>
-        <a href="/app" class="btn primary">Get started</a></div>
-      <div class="tier"><h3>Run it yourself</h3>
-        <div class="price">Open</div><small>your infrastructure, your keys</small>
-        <ul><li>Same engine, same SDK, same certificates</li>
-          <li>You hold the Ed25519 signing key</li>
-          <li>No data leaves your network</li>
-          <li>The certificate schema and reference verifier are public, so a
-            certificate can be checked without us</li></ul>
-        <a href="/docs#quickstart" class="btn">Read the docs</a></div>
+      <div class="tier feat"><h3>Decisions you can hand to an auditor</h3>
+        <ul><li>Every decision — allow, block, or escalate — is an <b>Ed25519-signed
+            certificate</b> in an append-only Merkle log</li>
+          <li>Verified <b>offline, by anyone</b>: <span class="mono">keel verify cert.json</span>
+            needs only the public key — not our server, not your word</li>
+          <li>Tamper with one field and the signature fails; drop one entry and the
+            chain breaks. Evidence, not logs.</li></ul>
+        <a href="/docs#certificates" class="btn">How certificates work</a></div>
+      <div class="tier"><h3>Autonomy is earned, never configured</h3>
+        <ul><li>Agents start in <b>shadow mode</b>: everything signed, only
+            catastrophes blocked</li>
+          <li>Trust tiers rise from <b>measured, externally-verified outcomes</b> —
+            Clopper-Pearson lower bounds, not vibes or a config flag</li>
+          <li>Drift detected → the window is voided and autonomy steps down.
+            The model never adjudicates its own trustworthiness.</li></ul>
+        <a href="/docs#autonomy" class="btn">How autonomy is earned</a></div>
     </div>
   </div>
 </section>
@@ -257,7 +253,7 @@ guard.<span class="f">register</span>(name=<span class="s">"My Agent"</span>, ac
       </div>
       <div><h4>Product</h4>
         <a href="#how">How it works</a><a href="#features">Features</a>
-        <a href="#pricing">Pricing</a><a href="/app">Console</a></div>
+        <a href="#different">Why KEEL</a><a href="/app">Console</a></div>
       <div><h4>Developers</h4>
         <a href="/docs#quickstart">Quickstart</a><a href="/docs#sdk">SDK reference</a>
         <a href="/docs#api">API reference</a><a href="/api/schema/certificate">Certificate schema</a></div>

@@ -182,6 +182,27 @@ except GuardRejected as e:
       <p>The open certificate schema is published at
         <a href="/api/schema/certificate"><code>/api/schema/certificate</code></a>.</p>
 
+      <h3>Verify a certificate offline — without trusting us</h3>
+      <p>This is what makes a KEEL certificate different from a log line: anyone holding the
+        JSON and the authority's public key can check it, with <strong>no server, no account,
+        and no network</strong>. If our infrastructure disappeared tomorrow, every certificate
+        ever issued would still verify.</p>
+      <pre><code># save any certificate (bare, API response, or audit-pack sample)
+curl -s "$KEEL_URL/api/certificates/keel:cert:XXXX?domain=gateway" \
+  -H "Authorization: Bearer $KEEL_API_KEY" > cert.json
+
+# verify it anywhere — signature, payload hash, and Merkle inclusion
+keel verify cert.json --key &lt;authority_public_key_hex&gt;
+#   ✓ signature
+#   ✓ leaf_matches_payload
+#   ✓ inclusion_proof
+#   result      : VALID</code></pre>
+      <p>Change one field of the certificate and the signature fails; swap in another entry's
+        inclusion proof and the leaf check fails. Pass <code>--root</code> to pin the log root
+        you saw earlier, and <code>--json</code> for a machine-readable report. The verifier is
+        deliberately dependency-free (<code>keel/cert/verifier.py</code>) so it can be reviewed
+        and vendored by a third party.</p>
+
       <h2 id="sdk">Python SDK</h2>
       <p><code>keel.sdk.KeelGuard(base_url, agent_id, wait_for_approval_s=0)</code></p>
       <table>

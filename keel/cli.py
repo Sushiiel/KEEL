@@ -39,6 +39,55 @@ def _guard(args: argparse.Namespace) -> None:
         asyncio.run(run_proxy(json.load(f)))
 
 
+def _verify(args: argparse.Namespace) -> None:
+    """Verify a certificate offline: signature + Merkle inclusion.
+
+    Needs only the JSON and the authority's public key — no server, no
+    account, no network. This is the command you hand an auditor.
+    """
+    import json as _json
+
+    from .cert import verifier
+
+    with open(args.certificate) as f:
+        bundle = _json.load(f)
+
+    key = (args.key or os.environ.get("KEEL_PUBLIC_KEY", "")).strip()
+    key_source = "--key" if args.key else "KEEL_PUBLIC_KEY"
+    if not key:
+        # last resort: a key embedded in the bundle itself (audit packs carry
+        # one). Verifying against it proves internal consistency only — the
+        # document vouching for itself — so say so loudly.
+        key = str(bundle.get("authority_public_key", "")).strip()
+        key_source = "embedded in the bundle (SELF-REFERENTIAL)"
+    if not key:
+        print("error: no public key. Pass --key <hex>, set KEEL_PUBLIC_KEY, or "
+              "verify a bundle that embeds authority_public_key.", file=sys.stderr)
+        sys.exit(2)
+
+    report = verifier.verify(bundle, key, expected_root=args.root)
+    if args.json:
+        print(_json.dumps(report, indent=2))
+    else:
+        print(f"certificate : {report.get('cert_id') or '(unknown)'}")
+        print(f"signer      : {report.get('signer') or '(unknown)'}")
+        print(f"public key  : {key[:16]}…  [{key_source}]")
+        for name, ok in report.get("checks", {}).items():
+            mark = "✓" if ok else ("—" if ok is None else "✗")
+            note = "" if ok is not None else "  (not supplied — not checked)"
+            print(f"  {mark} {name}{note}")
+        if "log" in report:
+            lg = report["log"]
+            print(f"log         : entry {lg.get('index')} of {lg.get('size')}, "
+                  f"root {str(lg.get('root'))[:16]}…")
+        if "SELF-REFERENTIAL" in key_source and report["valid"]:
+            print("note        : verified against a key embedded in the same "
+                  "document. Obtain the key out-of-band to rule out a swapped "
+                  "bundle.")
+        print("result      : " + ("VALID" if report["valid"] else "NOT VALID"))
+    sys.exit(0 if report["valid"] else 1)
+
+
 def _keygen(args: argparse.Namespace) -> None:
     """Print a fresh authority signing key for KEEL_SIGNING_KEY_PEM."""
     from .cert.authority import export_private_pem
@@ -76,6 +125,17 @@ def main(argv: list[str] | None = None) -> int:
     g = sub.add_parser("guard", help="run the enforcing MCP proxy")
     g.add_argument("config", help="path to a proxy config JSON file")
     g.set_defaults(func=_guard)
+
+    v = sub.add_parser("verify",
+                       help="verify a certificate offline (signature + Merkle inclusion)")
+    v.add_argument("certificate", help="path to a certificate JSON (bare, "
+                   "/api/certificates response, or audit-pack sample)")
+    v.add_argument("--key", default="", help="authority public key, hex "
+                   "(or set KEEL_PUBLIC_KEY)")
+    v.add_argument("--root", default=None,
+                   help="pin the expected transparency-log root (hex)")
+    v.add_argument("--json", action="store_true", help="machine-readable report")
+    v.set_defaults(func=_verify)
 
     k = sub.add_parser("keygen",
                        help="generate the authority signing key (KEEL_SIGNING_KEY_PEM)")

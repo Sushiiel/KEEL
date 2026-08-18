@@ -457,7 +457,10 @@ _FAVICON = (
 # paths people actually type or that other sites link to → send them somewhere real
 _FRIENDLY_REDIRECTS = {
     "/index.html": "/", "/home": "/", "/start": "/",
-    "/pricing": "/#pricing", "/price": "/#pricing", "/plans": "/#pricing",
+    # there is no pricing page — KEEL is free; typed pricing paths land on the
+    # section that explains what you get and why it's different
+    "/pricing": "/#different", "/price": "/#different", "/plans": "/#different",
+    "/free": "/#different",
     "/features": "/#features", "/use-cases": "/#use-cases",
     "/login": "/app", "/signin": "/app", "/sign-in": "/app",
     "/signup": "/app", "/sign-up": "/app", "/register": "/app",
