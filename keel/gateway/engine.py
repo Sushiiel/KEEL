@@ -340,12 +340,12 @@ def _finalize(store: Store, req: ActionRequest, decision: str, risk: str,
         autonomy_tier=tier,
         decision=f"{decision} — " + (reasons[0] if reasons else ""),
         graph_version="gateway", scm_version="gateway-v1",
-        model_version="keel-0.3.0", created_at=time.time())
+        model_version="keel-0.3.1", created_at=time.time())
     cert = authority.issue(store, cert)
     dec.cert_id = cert.cert_id
     # optional integrations: lineage, knowledge graph, observability
     adapters.mlflow_log_versions({"graph": "gateway", "scm": "gateway-v1",
-                                  "model": "keel-0.3.0", "cert": cert.cert_id})
+                                  "model": "keel-0.3.1", "cert": cert.cert_id})
     adapters.neo4j_sync_decision(req.agent_id, req.action_class, decision, cert.cert_id)
     adapters.trace_decision("keel.gateway.decision",
                             {"agent": req.agent_id, "action_class": req.action_class,
@@ -391,7 +391,7 @@ def approve(request_id: str, approver: str, allow: bool,
               "note": note},
         decision=f"HUMAN-{'APPROVED' if allow else 'DENIED'} by {approver}",
         graph_version="gateway", scm_version="gateway-v1",
-        model_version="keel-0.3.0", created_at=time.time())
+        model_version="keel-0.3.1", created_at=time.time())
     authority.issue(store, release)
     decs = store.kv_get(_DECISIONS, {})
     decs[request_id] = dec.model_dump()

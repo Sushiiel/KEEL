@@ -11,4 +11,4 @@ emits a signed, machine-readable Causal Certificate — or abstains.
 The LLM proposes hypotheses. It never adjudicates truth.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

@@ -1,6 +1,6 @@
 [project]
 name = "keel-trust"
-version = "0.3.0"
+version = "0.3.1"
 description = "The runtime trust layer for agentic AI — verify every AI agent action before it executes, and sign tamper-proof proof for auditors and insurers."
 readme = "README.md"
 requires-python = ">=3.11"

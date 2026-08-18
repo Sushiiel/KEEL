@@ -50,7 +50,7 @@ from ..substrate.simulator import simulate_incident
 _EXPLORER = (os.environ.get("KEEL_API_EXPLORER", "").lower() in ("1", "true")
              or os.environ.get("KEEL_AUTH_REQUIRED", "0") != "1")
 
-app = FastAPI(title="KEEL", version="0.3.0",
+app = FastAPI(title="KEEL", version="0.3.1",
               description="Runtime trust layer for agentic AI",
               docs_url="/api-explorer" if _EXPLORER else None,
               redoc_url="/api-redoc" if _EXPLORER else None,
@@ -543,7 +543,7 @@ def sitemap() -> Response:
 
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
-    return {"status": "ok", "service": "keel", "version": "0.3.0"}
+    return {"status": "ok", "service": "keel", "version": "0.3.1"}
 
 
 @app.get("/api/ops/durability")

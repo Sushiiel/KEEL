@@ -83,10 +83,36 @@ class KeelGuard:
             "reversible": reversible, "idempotency_key": idempotency_key})
 
     def outcome(self, request_id: str, success: bool, detail: str = "",
-                harm: bool = False) -> dict[str, Any]:
-        return self._call("POST", "/api/gateway/outcome", {
+                harm: bool = False, reported_by: str = "agent",
+                cost_actual: Optional[float] = None) -> dict[str, Any]:
+        """Report what actually happened after an action.
+
+        `reported_by` matters more than it looks: an agent's own reports
+        ("agent"/"self") calibrate the success bound but NEVER promote
+        autonomy tiers — Replit's agent famously misreported rollback state,
+        so self-assessment is structurally distrusted here. Tier promotion
+        requires outcomes reported by something that is not the agent: your
+        CI pipeline, a monitoring check, a human reviewer. Have that system
+        call outcome(..., reported_by="ci-pipeline") under its own name.
+        KEEL records the attribution; making it truthful is the operator's
+        side of the contract.
+        """
+        body: dict[str, Any] = {
             "request_id": request_id, "success": success,
-            "detail": detail, "harm": harm})
+            "detail": detail, "harm": harm, "reported_by": reported_by}
+        if cost_actual is not None:
+            body["cost_actual"] = cost_actual
+        return self._call("POST", "/api/gateway/outcome", body)
+
+    # ── evidence & accountability ────────────────────────────────────────────
+    def audit_pack(self, sample: int = 25) -> dict[str, Any]:
+        """The auditor-ready evidence bundle, scoped to this account."""
+        return self._call("GET", f"/api/gateway/audit-pack?sample={sample}")
+
+    def checkpoint(self) -> dict[str, Any]:
+        """The deployment's signed transparency-log checkpoint. Keep these:
+        two of them prove log tampering (`keel checkpoint compare`)."""
+        return self._call("GET", "/api/gateway/checkpoint")
 
     # ── portable trust ──────────────────────────────────────────────────────
     def export_passport(self) -> dict[str, Any]:
