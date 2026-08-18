@@ -62,7 +62,8 @@ gating. See "Connect your data" in the UI.
 ## Install as a library
 
 ```bash
-pip install keel          # or: pip install "keel[all]" for MCP/LLM/OTel/vectors
+pip install keel-trust    # or: pip install "keel-trust[all]" for MCP/LLM/OTel/vectors
+# (installs as keel-trust, imports as `keel` — the bare name was taken on PyPI)
 
 keel serve                # site, console, docs, gateway on :8347
 keel serve --sandbox      # + simulated demo worlds (evaluation only)

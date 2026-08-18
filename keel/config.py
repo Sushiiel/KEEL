@@ -11,7 +11,7 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent            # the installed keel/ package
 ROOT = PKG.parent                                # repo root (dev) or site-packages
-# Static assets ship inside the package so `pip install keel` is self-contained.
+# Static assets ship inside the package so `pip install keel-trust` is self-contained.
 UI_DIR = PKG / "ui"
 SCHEMA_DIR = PKG / "schemas"
 SITE_DIR = PKG / "site"

@@ -11,7 +11,7 @@ relying party (auditor, insurer, counterparty, court) needs:
 
 It deliberately imports no server, store, or config code — only hashlib, json,
 and the Ed25519 primitive — so it runs anywhere the JSON does: a laptop with
-`pip install keel`, a CI job, an auditor's air-gapped machine. The KEEL server
+`pip install keel-trust`, a CI job, an auditor's air-gapped machine. The KEEL server
 being down, compromised, or gone does not change the answer.
 
 The canonicalization here must match authority.canonical_payload exactly:

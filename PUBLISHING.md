@@ -38,7 +38,7 @@ for w in glob.glob("dist/*.whl"):
 PY
 ```
 
-After upload, anyone can `pip install keel`.
+After upload, anyone can `pip install keel-trust`.
 
 ## Source (GitHub)
 
