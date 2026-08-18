@@ -1384,20 +1384,28 @@ addEventListener("hashchange", route);
 // ── auth gate ────────────────────────────────────────────────────────────
 let ACCOUNT = null;
 
-function authScreen(mode) {
+function authScreen(mode, signupMode) {
   document.body.innerHTML = "";
   const wrap = h("div", { style: "min-height:100vh;display:grid;place-items:center;background:var(--abyss)" });
   const card = h("div", { class: "panel", style: "width:380px;max-width:92vw;padding:32px" });
   const email = h("input", { class: "ing-line", style: "width:100%;margin-bottom:10px", type: "email", placeholder: "you@company.com" });
   const pw = h("input", { class: "ing-line", style: "width:100%;margin-bottom:6px", type: "password", placeholder: "password (min 8 chars)" });
   const name = h("input", { class: "ing-line", style: "width:100%;margin-bottom:10px", placeholder: "your name (optional)" });
+  // shown only when the deployment requires one (KEEL_SIGNUP=invite) — a
+  // signup wall with no way to enter the invite code is a locked door with
+  // no keyhole
+  const invite = signupMode === "invite"
+    ? h("input", { class: "ing-line", style: "width:100%;margin-bottom:10px",
+        placeholder: "invite code" })
+    : null;
   const err = h("div", { style: "color:var(--crit);font-size:12px;min-height:16px;margin-bottom:10px" });
   const submit = async () => {
     err.textContent = "";
     try {
       const path = mode === "signup" ? "/api/auth/signup" : "/api/auth/login";
       const body = mode === "signup"
-        ? { email: email.value, password: pw.value, name: name.value }
+        ? { email: email.value, password: pw.value, name: name.value,
+            invite_code: invite ? invite.value.trim() : "" }
         : { email: email.value, password: pw.value };
       const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!r.ok) { err.textContent = (await r.json()).detail || "failed"; return; }
@@ -1410,16 +1418,21 @@ function authScreen(mode) {
       h("div", { class: "sub" }, "Causal Verification Authority")),
     h("h3", { style: "font-size:15px;margin-bottom:16px;color:var(--ink)" },
       mode === "signup" ? "Create your account" : "Sign in"),
-    email, pw, mode === "signup" ? name : null, err,
+    mode === "signup" && signupMode === "closed"
+      ? h("div", { style: "font-size:12.5px;color:var(--ink-2);margin-bottom:10px" },
+          "Sign-ups are closed on this deployment. Ask the operator for access.")
+      : null,
+    email, pw, mode === "signup" ? name : null,
+    mode === "signup" ? invite : null, err,
     h("button", { class: "primary", style: "width:100%", onclick: submit },
       mode === "signup" ? "Create account & sign in" : "Sign in"),
     h("div", { style: "text-align:center;margin-top:14px;font-size:12.5px;color:var(--ink-3)" },
       mode === "signup" ? "Already have an account? " : "New to KEEL? ",
       h("a", { href: "#", style: "color:var(--brass)", onclick: (e) => { e.preventDefault();
-        authScreen(mode === "signup" ? "login" : "signup"); } },
+        authScreen(mode === "signup" ? "login" : "signup", signupMode); } },
         mode === "signup" ? "Sign in" : "Create one")),
   ].filter(Boolean).forEach((k) => card.append(k));
-  [email, pw, name].forEach((i) => i && i.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
+  [email, pw, name, invite].forEach((i) => i && i.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
   wrap.append(card); document.body.append(wrap);
 }
 
@@ -1427,7 +1440,10 @@ async function boot() {
   try {
     const cfg = await fetch("/api/auth/config").then((r) => r.json());
     const me = await fetch("/api/auth/me");
-    if (me.status === 401) { authScreen(cfg.has_accounts ? "login" : "signup"); return; }
+    if (me.status === 401) {
+      authScreen(cfg.has_accounts ? "login" : "signup", cfg.signup_mode);
+      return;
+    }
     ACCOUNT = await me.json();
   } catch { /* server booting — proceed, endpoints will retry */ }
   await refreshOverview();
