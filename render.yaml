@@ -17,15 +17,32 @@ services:
       - key: KEEL_DATA_DIR
         value: /data
       # After deploy, add these in the Render dashboard → Environment:
-      #   GEMINI_API_KEY          (your free Gemini key — the LLM reviewer)
-      #   RAZORPAY_KEY_ID         (once you're ready to take payments)
-      #   RAZORPAY_KEY_SECRET
-      #   RAZORPAY_WEBHOOK_SECRET
+      #
+      #   KEEL_SIGNING_KEY_PEM  ← MOST IMPORTANT. The Ed25519 authority key that
+      #       signs every certificate and the transparency-log root. With no
+      #       persistent disk the file-backed key is REGENERATED ON EVERY
+      #       DEPLOY, which silently makes every certificate ever issued fail
+      #       verification — while the service keeps reporting healthy. Generate
+      #       one with `keel keygen` and paste the whole PEM block.
+      #   GEMINI_API_KEY        (your free Gemini key — the LLM reviewer)
+      #   KEEL_SIGNUP           open | invite | closed  (who may create accounts)
+      #   KEEL_INVITE_CODE      required when KEEL_SIGNUP=invite
+      #   KEEL_TRUSTED_PROXY=1  Render terminates TLS, so honour X-Forwarded-For
+      #       for rate limiting. Only set this when actually behind a proxy —
+      #       otherwise a caller can forge their address and evade every limit.
+      #   KEEL_LEGAL_ENTITY / KEEL_LEGAL_ADDRESS / KEEL_SUPPORT_EMAIL
+      #       operator identity shown on /terms, /privacy and /contact. Until
+      #       these are set those pages say they are not yet in force.
+      #   KEEL_API_EXPLORER=1   re-enable the interactive API explorer (off by
+      #       default in a hardened deployment so routes aren't enumerable)
+      #   KEEL_RATELIMIT=0      disable rate limiting (on by default)
 
 # ⚠ FREE TIER HAS NO PERSISTENT DISK: /data lives in the container, so accounts,
-# the ledger, and the signing key RESET on every redeploy/restart. That's fine
-# for a first public launch/demo. For durable data, upgrade to Starter ($7/mo)
-# and uncomment the disk block below (then data survives redeploys):
+# the ledger, and the signing key RESET on every redeploy/restart. Setting
+# KEEL_SIGNING_KEY_PEM above rescues the signing key — and therefore keeps
+# previously issued certificates verifiable — but accounts and the ledger are
+# still lost. For durable data, upgrade to Starter ($7/mo) and uncomment the
+# disk block below:
 #    disk:
 #      name: keel-data
 #      mountPath: /data

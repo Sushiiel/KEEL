@@ -146,13 +146,14 @@ section > .wrap > p.sub { color: var(--ink-2); font-size: 17px; max-width: 64ch;
   border: 1px solid #35463F; color: #BFD3C9; }
 
 /* pricing */
-.tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
+.tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px; margin-top: 36px; }
 .tier { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px;
   box-shadow: var(--shadow); display: flex; flex-direction: column; }
+/* `.feat` marks the recommended path. There is deliberately no "Most popular"
+   badge: nothing is sold here, so social proof about a purchase would be a
+   sales tactic dressed as information. */
 .tier.feat { border: 2px solid var(--cobalt); position: relative; }
-.tier.feat::before { content: "Most popular"; position: absolute; top: -11px; left: 24px;
-  background: var(--cobalt); color: #fff; font: 600 11px var(--mono); padding: 3px 10px;
-  border-radius: 20px; }
 .tier h3 { font-family: var(--disp); font-weight: 700; font-size: 20px; }
 .tier .price { font-family: var(--disp); font-weight: 700; font-size: 30px; margin: 8px 0 4px; }
 .tier .price small { font-size: 14px; color: var(--ink-3); font-weight: 500; }

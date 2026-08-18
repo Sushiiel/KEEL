@@ -51,7 +51,7 @@
       <a href="#accounts">Accounts &amp; login</a>
       <a href="#security">Security</a>
       <a href="#compliance">Compliance</a>
-      <a href="#billing">Plans &amp; billing</a>
+      <a href="#billing">Plans</a>
       <a href="#benchmarks">Verified benchmarks</a>
       <a href="#faq">FAQ</a>
     </aside>
@@ -82,11 +82,29 @@ keel version</code></pre>
         by default (override with <code>KEEL_DATA_DIR</code>).</p>
 
       <h2 id="quickstart">Quickstart</h2>
-      <p>Put any agent behind the gateway in three steps: register once, check before acting, report
-        the outcome. With the Python SDK a decorator does all three.</p>
-      <pre><code>from keel.sdk import KeelGuard, GuardRejected
 
-guard = KeelGuard("http://localhost:8347", agent_id="support-bot")
+      <h3>1 · Get your API key</h3>
+      <p>Sign in at <a href="/app">/app</a> and open <strong>Account</strong> (last item in the
+        left-hand nav). Copy the key shown at the top and put it in your environment — the SDK
+        and every REST example below read it from there.</p>
+      <pre><code>export KEEL_API_KEY=keel_ak_...       # from /app → Account</code></pre>
+      <div class="note">Treat the key like a password: it authenticates as your account. Keep it
+        in an environment variable or a secret manager, never in source control. You can rotate it
+        from the same screen — every agent using the old key stops working until you update it.</div>
+
+      <h3>2 · Point the SDK at your deployment</h3>
+      <p>Use the URL you signed in to. If you run <code>keel serve</code> yourself, that is
+        <code>http://localhost:8347</code> instead.</p>
+      <pre><code>export KEEL_URL=https://keel.best     # or http://localhost:8347 when self-hosting</code></pre>
+
+      <h3>3 · Put an agent behind the gateway</h3>
+      <p>Three steps: register once, check before acting, report the outcome. With the Python SDK
+        a decorator does all three.</p>
+      <pre><code>import os
+from keel.sdk import KeelGuard, GuardRejected
+
+# api_key defaults to $KEEL_API_KEY; pass api_key="..." to override
+guard = KeelGuard(os.environ["KEEL_URL"], agent_id="support-bot")
 guard.register(name="Support Bot", action_classes={
     "send_reply":   {"risk": "low"},
     "issue_refund": {"risk": "high", "budget_per_day": 500,
@@ -199,7 +217,10 @@ except GuardRejected as e:
         <tr><td><span class="method">POST</span><code>/api/webhook/alertmanager</code></td>
           <td>Ingest Prometheus Alertmanager events (ops vertical).</td></tr>
       </table>
-      <pre><code>curl -X POST http://localhost:8347/api/gateway/check \
+      <p>Every <code>/api</code> endpoint requires your account key. Without the
+        <code>Authorization</code> header the server returns <code>401</code>.</p>
+      <pre><code>curl -X POST "$KEEL_URL/api/gateway/check" \
+  -H "Authorization: Bearer $KEEL_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"agent_id":"support-bot","action_class":"issue_refund",
        "intent":"refund duplicate charge","payload":{"amount":49},
@@ -242,8 +263,8 @@ helm install keel deploy/helm/keel</code></pre>
 
       <h2 id="accounts">Accounts &amp; login</h2>
       <p>In production (<code>KEEL_AUTH_REQUIRED=1</code>) the console requires an account.
-        Each account is fully isolated: its agents, decisions, billing, and paid entitlements
-        are its own. A user's payment unlocks Team features <strong>for that account only</strong>.</p>
+        Each account is fully isolated: its agents, decisions, calibration, integration settings
+        and evidence packs are its own, and are never visible to another account.</p>
       <ul>
         <li>First visit to <code>/app</code> → <strong>Create your account</strong>; then sign in.</li>
         <li>Passwords are scrypt-hashed; sessions are signed, httpOnly cookies.</li>
@@ -280,38 +301,27 @@ helm install keel deploy/helm/keel</code></pre>
         per-bucket (never a per-decision probability), void under detected drift, and citation
         integrity verifies traceability — not that the evidence is true.</div>
 
-      <h2 id="billing">Plans &amp; billing</h2>
-      <p>The engine and SDK are open and free to self-host. The <strong>Team</strong> plan
-        (₹830/week in India via Razorpay, or $10/week via Stripe) unlocks managed hosting, HSM-backed signing keys, approval-queue integrations
-        (Slack/ticketing), the full &amp; scheduled evidence-pack export, and priority support.</p>
+      <h2 id="billing">Plans</h2>
+      <p><strong>KEEL is free.</strong> Every capability is included for every account —
+        self-hosted or on the managed service. There is no paid tier, no licence key, no
+        quota to buy, and no payment is ever taken.</p>
       <table>
-        <tr><th>Feature</th><th>Free</th><th>Team&nbsp;(₹830 / $10 · week)</th></tr>
-        <tr><td>Gateway, SDK, tripwires, calibration</td><td>✓</td><td>✓</td></tr>
-        <tr><td>Signed transparency log</td><td>✓</td><td>✓</td></tr>
-        <tr><td>Evidence pack</td><td>preview (3)</td><td>full &amp; scheduled</td></tr>
-        <tr><td>Slack / ticketing approval routing</td><td>—</td><td>✓</td></tr>
-        <tr><td>HSM-backed signing keys</td><td>—</td><td>✓</td></tr>
-        <tr><td>Priority support</td><td>—</td><td>✓</td></tr>
+        <tr><th>Capability</th><th>Included</th></tr>
+        <tr><td>Gateway, SDK, tripwires, calibration</td><td>✓</td></tr>
+        <tr><td>Signed transparency log</td><td>✓</td></tr>
+        <tr><td>Evidence pack — full export &amp; scheduling</td><td>✓</td></tr>
+        <tr><td>Slack / ticketing approval routing</td><td>✓</td></tr>
+        <tr><td>Hardened signing-key custody</td><td>✓</td></tr>
+        <tr><td>SSO, RBAC, private deployment</td><td>✓</td></tr>
+        <tr><td>WORM retention &amp; SCITT export</td><td>✓</td></tr>
       </table>
-      <p>KEEL supports <strong>Razorpay</strong> (India — UPI, cards, netbanking) and
-        <strong>Stripe</strong> (elsewhere). Configure whichever fits your region; the plan
-        activates automatically on payment (webhook + return redirect both handled).</p>
-      <pre><code># India — Razorpay (default when these are set)
-export RAZORPAY_KEY_ID=rzp_live_...
-export RAZORPAY_KEY_SECRET=...
-export RAZORPAY_WEBHOOK_SECRET=...
-# Razorpay dashboard: webhook → https://YOUR_HOST/api/billing/webhook/razorpay
-#                     event: payment_link.paid
-
-# Elsewhere — Stripe
-export STRIPE_SECRET_KEY=sk_live_...
-export STRIPE_WEBHOOK_SECRET=whsec_...
-# Stripe dashboard: webhook → https://YOUR_HOST/api/billing/webhook
-#                   event: checkout.session.completed</code></pre>
-      <div class="note">Without payment keys, real payments are off and the console offers a
-        clearly-labeled <em>dev / evaluation</em> unlock so you can try the Team features locally.
-        See <a href="#" onclick="return false">PUBLISHING.md</a> in the repo for the full release
-        and payment setup.</div>
+      <p>Check what your account can do at any time:</p>
+      <pre><code>curl -s https://keel.best/api/entitlement \
+  -H "Authorization: Bearer $KEEL_API_KEY"
+# → {"plan":"free","features":[...],"valid":true,"expires_at":null}</code></pre>
+      <div class="note">An audit evidence pack is scoped to your own account: it contains your
+        certificates, your calibration tables and your approval records, never another
+        tenant's.</div>
 
       <h2 id="benchmarks">Verified benchmarks</h2>
       <p>Every performance claim on this site is measured, not asserted. Reproduce them
@@ -348,9 +358,9 @@ export STRIPE_WEBHOOK_SECRET=whsec_...
         claim traces to its evidence, not that the evidence is true. Every certificate states its
         own scope.</p>
       <h3>How much does it cost?</h3>
-      <p>The engine and SDK are free and self-hostable. The Team plan is <strong>$10 / week</strong>
-        (₹830 in India) and unlocks managed hosting, hardened keys, approval-queue integrations,
-        and the full compliance evidence workflow — per account.</p>
+      <p>Nothing. Every capability is included for every account, self-hosted or on the managed
+        service — there is no paid tier, no licence key, and no payment is ever taken. See
+        <a href="#billing">Plans</a>.</p>
 
       <p style="margin-top:40px;color:var(--ink-3)">Questions? Open the
         <a href="/app">console</a> or read the <a href="/">product overview</a>.</p>

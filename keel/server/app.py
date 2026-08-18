@@ -37,6 +37,8 @@ from ..substrate import ingest as ing
 from ..gateway import engine as gw
 from .. import billing
 from .. import accounts
+from .. import legal
+from .. import ratelimit
 from ..gateway.models import (ActionOutcome, ActionRequest, AgentProfile)
 from ..structure.ensemble import PIN_KEY, current_graph, publish_graph
 from ..structure.discovery import CausalDiscovery, AdjacencyIndex
@@ -62,13 +64,12 @@ app = FastAPI(title="KEEL", version="0.3.0",
 # below are the complete, explicit public surface.
 _PUBLIC_EXACT = frozenset({
     "/", "/docs", "/app",                      # pages
+    "/terms", "/privacy", "/refunds", "/contact",   # policy pages, read pre-signup
     "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml",
     "/api/auth/config", "/api/auth/signup",    # you must be able to sign in
     "/api/auth/login", "/api/auth/logout",
     "/api/schema/certificate",                 # the open certificate standard
     "/.well-known/agent-card.json",            # A2A discovery (signed, public)
-    "/api/billing/webhook",                    # provider-signature verified
-    "/api/billing/webhook/razorpay",           # provider-signature verified
 })
 _PUBLIC_PREFIXES = ("/site/", "/ui/", "/static/", "/.well-known/acme-challenge")
 _GUARDED_PREFIXES = ("/api/", "/a2a")
@@ -188,8 +189,22 @@ def _startup() -> None:
 
 DomainQ = Query(default=DEFAULT_DOMAIN, description="domain workspace key")
 
-_INTEGRATIONS = "billing_integrations"
-_SCHEDULES = "billing_schedules"
+# Per-account configuration keys. These were once single global keys, which
+# meant any account could read AND overwrite every other account's settings —
+# and, worst of all, repoint the escalation webhook at its own Slack and
+# receive other tenants' agent ids, action classes and reasons. Namespacing is
+# the fix; there is deliberately no fallback to the old global key, because
+# falling back is exactly the leak.
+def _integrations_key(account_id: str) -> str:
+    return f"integrations:{account_id or 'acct_default'}"
+
+
+def _schedules_key(account_id: str) -> str:
+    return f"schedules:{account_id or 'acct_default'}"
+
+
+def _key_mode_key(account_id: str) -> str:
+    return f"security_key_mode:{account_id or 'acct_default'}"
 
 
 def current_account(request: Request, required: bool = False) -> dict[str, Any]:
@@ -205,17 +220,34 @@ def current_account(request: Request, required: bool = False) -> dict[str, Any]:
 
 
 def require_feature(request: Request, feature: str) -> dict[str, Any]:
-    """Raise 401 if unauthenticated (when required) or 402 if the account is
-    not entitled to this Team feature."""
+    """Authenticate the caller, then confirm the feature exists.
+
+    Every feature is free, so this never rejects on entitlement. It still
+    requires a signed-in account, and a feature name KEEL doesn't ship is a
+    programming error rather than a billing outcome — so it raises 500, not
+    402, to avoid ever implying a payment would fix it.
+    """
     acct = current_account(request, required=accounts.auth_required())
     if not billing.has_feature(acct["account_id"], feature):
-        raise HTTPException(402, {
-            "error": "This is a Team feature. Upgrade to unlock.",
-            "feature": feature, "upgrade": "/app#/billing"})
+        raise HTTPException(500, {"error": f"unknown feature '{feature}'"})
     return acct
 
 
 # ── authentication ───────────────────────────────────────────────────────────
+
+def _caller_ip(request: Request) -> str:
+    """The client address used as a rate-limit identity.
+
+    X-Forwarded-For is honoured only when KEEL_TRUSTED_PROXY=1. KEEL runs
+    behind a TLS-terminating proxy in production, so the header is the real
+    client there — but it is caller-supplied, so trusting it without a proxy in
+    front would let an attacker mint a fresh identity per request and bypass
+    every limit.
+    """
+    return ratelimit.client_ip(
+        dict(request.headers),
+        fallback=(request.client.host if request.client else ""))
+
 
 def _set_session(resp: Response, account: dict[str, Any]) -> None:
     resp.set_cookie("keel_session", accounts.issue_session(account),
@@ -233,7 +265,13 @@ def auth_config() -> dict[str, Any]:
 
 
 @app.post("/api/auth/signup")
-def auth_signup(body: dict[str, Any] = Body(...)) -> JSONResponse:
+def auth_signup(request: Request, body: dict[str, Any] = Body(...)) -> JSONResponse:
+    # Rate-limited per address: an open signup is otherwise a free way to fill
+    # the store and burn the deployment's shared model quota.
+    ok, retry = ratelimit.check("signup", _caller_ip(request))
+    if not ok:
+        raise HTTPException(429, {"error": "too many sign-up attempts",
+                                  "retry_after_seconds": int(retry) + 1})
     # KEEL_SIGNUP: open (default) · invite (needs KEEL_INVITE_CODE) · closed
     mode = os.environ.get("KEEL_SIGNUP", "open").lower()
     if mode == "closed":
@@ -257,10 +295,23 @@ def auth_signup(body: dict[str, Any] = Body(...)) -> JSONResponse:
 
 
 @app.post("/api/auth/login")
-def auth_login(body: dict[str, Any] = Body(...)) -> JSONResponse:
-    acct = accounts.authenticate(body.get("email", ""), body.get("password", ""))
+def auth_login(request: Request, body: dict[str, Any] = Body(...)) -> JSONResponse:
+    email = str(body.get("email", "")).strip().lower()
+    # Two budgets, because either alone is bypassable: a per-account limit does
+    # nothing against one password sprayed across many accounts, and a per-IP
+    # limit does nothing against a distributed attack on one account.
+    for budget, ident in (("login", email), ("login_ip", _caller_ip(request))):
+        ok, retry = ratelimit.check(budget, ident)
+        if not ok:
+            raise HTTPException(429, {
+                "error": "too many sign-in attempts",
+                "retry_after_seconds": int(retry) + 1})
+    acct = accounts.authenticate(email, body.get("password", ""))
     if acct is None:
         raise HTTPException(401, "invalid email or password")
+    # Clear the budget on success so a user who mistyped twice isn't left one
+    # attempt from being locked out of their own account.
+    ratelimit.reset("login", email)
     resp = JSONResponse(accounts.public(acct))
     _set_session(resp, acct)
     return resp
@@ -288,56 +339,21 @@ def auth_rotate(request: Request) -> dict[str, Any]:
     return {"api_key": key}
 
 
-# ── billing & entitlements ───────────────────────────────────────────────────
+# ── entitlements ─────────────────────────────────────────────────────────────
+# KEEL takes no payments. There is no checkout, confirm, activate, webhook or
+# deactivate endpoint, because there is nothing to buy or cancel. This endpoint
+# remains so the console can show what an account may do.
 
 @app.get("/api/billing/status")
 def billing_status(request: Request) -> dict[str, Any]:
     return billing.status(current_account(request)["account_id"])
 
 
-@app.post("/api/billing/checkout")
-def billing_checkout(request: Request,
-                     body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-    base = str(request.base_url).rstrip("/")
-    return billing.create_checkout(base, account=current_account(request)["account_id"])
-
-
-@app.post("/api/billing/confirm")
-def billing_confirm(request: Request,
-                    body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    # The account credited comes from the provider-signed payment, and must
-    # match the caller — never from a field in `body`.
-    return billing.confirm_checkout(
-        body, session_account=current_account(request)["account_id"])
-
-
-@app.post("/api/billing/webhook/razorpay")
-async def billing_webhook_razorpay(request: Request) -> dict[str, Any]:
-    payload = await request.body()
-    sig = request.headers.get("x-razorpay-signature", "")
-    return billing.handle_razorpay_webhook(payload, sig)
-
-
-@app.post("/api/billing/activate")
-def billing_activate(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    res = billing.dev_activate(current_account(request)["account_id"],
-                               body.get("code", ""))
-    if not res.get("activated"):
-        raise HTTPException(403, res.get("error", "activation failed"))
-    return res
-
-
-@app.post("/api/billing/webhook")
-async def billing_webhook(request: Request) -> dict[str, Any]:
-    payload = await request.body()
-    sig = request.headers.get("stripe-signature", "")
-    return billing.handle_webhook(payload, sig)
-
-
-@app.post("/api/billing/deactivate")
-def billing_deactivate(request: Request) -> dict[str, Any]:
-    billing.deactivate(current_account(request)["account_id"])
-    return {"deactivated": True, "plan": "free"}
+@app.get("/api/entitlement")
+def entitlement_status(request: Request) -> dict[str, Any]:
+    """Preferred name for the same answer; /api/billing/status is the legacy
+    path kept so existing integrations don't break."""
+    return billing.status(current_account(request)["account_id"])
 
 
 # ── Team feature: Slack / ticketing approval-queue integration ───────────────
@@ -345,7 +361,9 @@ def billing_deactivate(request: Request) -> dict[str, Any]:
 @app.get("/api/integrations")
 def integrations_get(request: Request) -> dict[str, Any]:
     acct = current_account(request)
-    cfg = gw.gw_store().kv_get(_INTEGRATIONS, {})
+    cfg = gw.gw_store().kv_get(_integrations_key(acct["account_id"]), {})
+    # only whether something is set, never the webhook URL itself — it is a
+    # bearer credential for posting into someone's workspace
     return {"configured": {k: bool(v) for k, v in cfg.items()},
             "entitled": billing.has_feature(acct["account_id"], "approval_integrations")}
 
@@ -355,7 +373,7 @@ _ALLOWED_HOOK_HOSTS = {"hooks.slack.com", "discord.com", "discordapp.com"}
 
 @app.put("/api/integrations/slack")
 def integrations_slack(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    require_feature(request, "approval_integrations")
+    acct = require_feature(request, "approval_integrations")
     url = str(body.get("webhook_url", "")).strip()
     if url:
         from urllib.parse import urlparse
@@ -363,19 +381,27 @@ def integrations_slack(request: Request, body: dict[str, Any] = Body(...)) -> di
         if u.scheme != "https" or u.hostname not in _ALLOWED_HOOK_HOSTS:
             raise HTTPException(400, "webhook must be an https URL on an allowed "
                                 f"host {sorted(_ALLOWED_HOOK_HOSTS)} (SSRF guard)")
-    cfg = gw.gw_store().kv_get(_INTEGRATIONS, {})
+    key = _integrations_key(acct["account_id"])
+    cfg = gw.gw_store().kv_get(key, {})
     cfg["slack_webhook"] = url
-    gw.gw_store().kv_set(_INTEGRATIONS, cfg)
+    gw.gw_store().kv_set(key, cfg)
     return {"ok": True, "slack": bool(url)}
 
 
 def _notify_escalation(decision: dict[str, Any]) -> None:
-    """Fire the configured Slack/ticketing hook when an action escalates —
-    Team feature, silently skipped when unentitled or unconfigured."""
-    owner = gw.agent_owner(decision.get("agent_id", "")) or "acct_default"
-    if decision.get("decision") != "ESCALATE" or not billing.has_feature(owner, "approval_integrations"):
+    """Fire the escalating agent's OWN Slack/ticketing hook.
+
+    The webhook is resolved from the account that owns the agent — never a
+    global setting. A shared key here would let any account repoint every other
+    tenant's escalation notices at its own workspace, exfiltrating agent ids,
+    action classes and reasons. Silently skipped when unconfigured.
+    """
+    owner = gw.agent_owner(decision.get("agent_id", ""))
+    if decision.get("decision") != "ESCALATE":
         return
-    cfg = gw.gw_store().kv_get(_INTEGRATIONS, {})
+    if not owner:
+        return          # unattributed agent: no account, so no hook to fire
+    cfg = gw.gw_store().kv_get(_integrations_key(owner), {})
     hook = cfg.get("slack_webhook")
     if not hook:
         return
@@ -394,12 +420,13 @@ def _notify_escalation(decision: dict[str, Any]) -> None:
 
 @app.post("/api/gateway/schedule-evidence")
 def schedule_evidence(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    require_feature(request, "evidence_scheduling")
-    sched = gw.gw_store().kv_get(_SCHEDULES, {})
+    acct = require_feature(request, "evidence_scheduling")
+    key = _schedules_key(acct["account_id"])
+    sched = gw.gw_store().kv_get(key, {})
     sched["evidence"] = {"every_hours": float(body.get("every_hours", 24)),
                          "sample": int(body.get("sample", 25)),
                          "next_at": time.time() + float(body.get("every_hours", 24)) * 3600}
-    gw.gw_store().kv_set(_SCHEDULES, sched)
+    gw.gw_store().kv_set(key, sched)
     return {"scheduled": sched["evidence"]}
 
 
@@ -407,10 +434,10 @@ def schedule_evidence(request: Request, body: dict[str, Any] = Body(...)) -> dic
 
 @app.put("/api/security/key-mode")
 def key_mode(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    require_feature(request, "hsm_keys")
+    acct = require_feature(request, "hsm_keys")
     mode = body.get("mode", "managed")
-    gw.gw_store().kv_set("security_key_mode", mode)
-    return {"key_mode": mode, "note": "HSM/KMS-backed signing (Team)"}
+    gw.gw_store().kv_set(_key_mode_key(acct["account_id"]), mode)
+    return {"key_mode": mode, "note": "HSM/KMS-backed signing"}
 
 
 # ── domains ──────────────────────────────────────────────────────────────────
@@ -435,10 +462,17 @@ _FRIENDLY_REDIRECTS = {
     "/login": "/app", "/signin": "/app", "/sign-in": "/app",
     "/signup": "/app", "/sign-up": "/app", "/register": "/app",
     "/console": "/app", "/dashboard": "/app", "/gateway": "/app#/gateway",
-    "/billing": "/app#/billing", "/upgrade": "/app#/billing",
+    # the old upgrade screen is now the Account view; keep the typed paths working
+    "/billing": "/app#/account", "/upgrade": "/app#/account",
+    "/account": "/app#/account", "/api-key": "/app#/account",
     "/documentation": "/docs", "/doc": "/docs", "/help": "/docs",
     "/api": "/docs#api", "/sdk": "/docs#sdk", "/quickstart": "/docs#quickstart",
     "/github": "https://github.com/Sushiiel/KEEL",
+    # policy-page aliases — payment reviewers and users try all of these
+    "/terms-of-service": "/terms", "/tos": "/terms", "/legal": "/terms",
+    "/privacy-policy": "/privacy", "/refund": "/refunds",
+    "/refund-policy": "/refunds", "/cancellation": "/refunds",
+    "/shipping": "/refunds", "/contact-us": "/contact", "/support": "/contact",
 }
 
 
@@ -996,17 +1030,13 @@ def gw_approve(request_id: str, request: Request,
 @app.get("/api/gateway/audit-pack")
 def gw_audit_pack(request: Request, sample: int = 25) -> dict[str, Any]:
     from ..gateway.audit import build_audit_pack
-    acct = current_account(request)
-    if billing.has_feature(acct["account_id"], "evidence_export_full"):
-        return build_audit_pack(sample_size=sample)
-    # free tier: a capped, watermarked PREVIEW — full export is a Team feature
-    pack = build_audit_pack(sample_size=3)
-    pack["sampled_decisions"] = pack["sampled_decisions"][:3]
-    pack["preview"] = True
-    pack["upgrade"] = {"message": "Preview only — 3 of many decisions. "
-                       "Upgrade to Team ($10/mo) for the full, schedulable, "
-                       "auditor-ready evidence pack.", "url": "/app#/billing"}
-    return pack
+    acct = require_feature(request, "evidence_export_full")
+    # Always scoped to the caller's account. The pack carries certificates,
+    # calibration tables and approver identities, so an unscoped export here
+    # would be a cross-tenant disclosure. Only a local/self-host deployment
+    # (no accounts, so nothing to separate) gets the deployment-wide pack.
+    scope = None if not accounts.auth_required() else acct["account_id"]
+    return build_audit_pack(sample_size=sample, account_id=scope)
 
 
 # ── interop ──────────────────────────────────────────────────────────────────
@@ -1043,6 +1073,31 @@ def docs() -> FileResponse:
 @app.get("/app")
 def console() -> FileResponse:
     return FileResponse(UI_DIR / "index.html")
+
+
+# ── policy pages ─────────────────────────────────────────────────────────────
+# Public and unauthenticated by design: a payment provider's reviewer, and a
+# prospective user deciding whether to trust us with data, both need to read
+# these before they have an account.
+
+@app.get("/terms", response_class=HTMLResponse)
+def page_terms() -> str:
+    return legal.terms_html()
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def page_privacy() -> str:
+    return legal.privacy_html()
+
+
+@app.get("/refunds", response_class=HTMLResponse)
+def page_refunds() -> str:
+    return legal.refunds_html()
+
+
+@app.get("/contact", response_class=HTMLResponse)
+def page_contact() -> str:
+    return legal.contact_html()
 
 
 app.mount("/site", StaticFiles(directory=str(SITE_DIR)), name="site")

@@ -27,9 +27,8 @@ llm = ["litellm", "anthropic"]
 mcp = ["mcp"]
 otel = ["opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp-proto-http"]
 vectors = ["qdrant-client"]
-stripe = ["stripe"]
 all = ["litellm", "anthropic", "mcp", "opentelemetry-api", "opentelemetry-sdk",
-       "opentelemetry-exporter-otlp-proto-http", "qdrant-client", "jsonschema", "stripe"]
+       "opentelemetry-exporter-otlp-proto-http", "qdrant-client", "jsonschema"]
 
 [project.scripts]
 keel = "keel.cli:main"

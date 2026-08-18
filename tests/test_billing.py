@@ -1,62 +1,91 @@
-"""The $10 Team paywall: features gate on entitlement, license signed, dev+stripe paths."""
+"""Entitlements: everything is free, and the gate cannot silently mislead.
+
+There is no paywall left to test. What still needs pinning is that the
+entitlement API is unconditional and honest — because the failure mode of a
+"free" build is the opposite of a paywall's: a feature check that quietly
+returns False, or a UI that still advertises a price.
+"""
 import os
-os.environ.setdefault("KEEL_SANDBOX", "1")
 import tempfile
+
+os.environ.setdefault("KEEL_SANDBOX", "1")
 os.environ.setdefault("KEEL_DATA_DIR", tempfile.mkdtemp(prefix="keel-bill-"))
 
 from keel import billing
 
-
 ACC = "acct_test"
+OTHER = "acct_someone_else"
 
 
-def setup_function():
-    billing.deactivate(ACC)
-
-
-def test_free_by_default():
-    ent = billing.entitlement(ACC)
-    assert ent["plan"] == "free" and not ent["valid"]
-    assert not billing.has_feature(ACC, "hsm_keys")
-    assert not billing.has_feature(ACC, "approval_integrations")
-
-
-def test_activate_unlocks_all_team_features():
-    billing.activate(ACC, "team", source="test")
-    for f in billing.FEATURES["team"]:
+def test_every_feature_is_available():
+    for f in billing.ALL_FEATURES:
         assert billing.has_feature(ACC, f), f
-    assert billing.entitlement(ACC)["plan"] == "team"
 
 
-def test_license_is_signed_and_tamper_evident():
-    billing.activate(ACC, "team", source="test")
-    lic = billing._bill_store().kv_get(billing._lkey(ACC))
-    assert billing._verify(lic)
-    lic["plan"] = "enterprise"                 # tamper
-    assert not billing._verify(lic)
+def test_features_do_not_depend_on_the_account():
+    """No account is privileged, and an unknown account is not penalised."""
+    for acct in (ACC, OTHER, "", "acct_never_seen_before"):
+        assert billing.entitlement(acct)["features"] == sorted(billing.ALL_FEATURES)
 
 
-def test_expired_license_is_invalid():
-    billing.activate(ACC, "team", source="test", days=-1)   # already expired
-    assert not billing.entitlement(ACC)["valid"]
-    assert not billing.has_feature(ACC, "hsm_keys")
+def test_unknown_feature_is_false():
+    """The one thing has_feature must still refuse.
+
+    require_feature() raises on a False result, so returning True for anything
+    would turn a typo'd gate into a silently passing one — the bug class that
+    let endpoints ship unprotected in the first place.
+    """
+    assert not billing.has_feature(ACC, "hsm_keyz")
+    assert not billing.has_feature(ACC, "")
+    assert not billing.has_feature(ACC, "arbitrary_new_thing")
 
 
-def test_dev_activate_requires_code():
-    # dev unlock is a LOCAL/self-host affordance; it is refused in production
-    prev = os.environ.get("KEEL_AUTH_REQUIRED")
-    os.environ["KEEL_AUTH_REQUIRED"] = "0"
-    try:
-        assert not billing.dev_activate(ACC, "wrong")["activated"]
-        assert billing.dev_activate(
-            ACC, os.environ.get("KEEL_UNLOCK_CODE", "DEV-UNLOCK"))["activated"]
-    finally:
-        if prev is None:
-            os.environ.pop("KEEL_AUTH_REQUIRED", None)
-        else:
-            os.environ["KEEL_AUTH_REQUIRED"] = prev
+def test_entitlement_never_expires():
+    ent = billing.entitlement(ACC)
+    assert ent["valid"] is True
+    assert ent["expires_at"] is None, "a free plan must not carry an expiry"
+    assert ent["plan"] == "free"
 
 
-def test_price_is_ten_dollars():
-    assert billing.PRICE_USD == 10.0
-    assert billing.status(ACC)["price_usd"] == 10.0
+def test_no_payment_provider_is_configured():
+    assert billing.provider() == "free"
+    assert billing.status(ACC)["payments_live"] is False
+
+
+def test_price_is_zero_and_not_periodic():
+    pr = billing.price()
+    assert pr["amount"] == 0
+    assert pr["display"] == "Free"
+    assert pr["period"] == "forever", "a free plan must not imply a billing period"
+    assert billing.status(ACC)["price_usd"] == 0
+
+
+def test_status_locks_nothing():
+    st = billing.status(ACC)
+    assert st["locked_features"] == []
+    assert sorted(st["all_features"]) == sorted(billing.ALL_FEATURES)
+
+
+def test_every_plan_name_maps_to_the_full_feature_set():
+    """Legacy callers may still ask by plan name; none may get less."""
+    for plan, feats in billing.FEATURES.items():
+        assert set(feats) == set(billing.ALL_FEATURES), plan
+
+
+def test_payment_surface_is_gone():
+    """A leftover callable is a live paywall waiting to be re-wired, and a
+    Razorpay/Stripe entry point we would no longer be maintaining."""
+    for name in ("create_checkout", "confirm_checkout", "handle_webhook",
+                 "handle_razorpay_webhook", "dev_activate", "activate",
+                 "deactivate", "_claim_payment", "_razorpay_request",
+                 "PRICE_CENTS", "PRICE_USD", "PRICE_INR", "PLAN_DAYS"):
+        assert not hasattr(billing, name), f"billing.{name} still exists"
+
+
+def test_no_price_string_leaks_from_the_api():
+    """Guards the bug that understated a weekly price by 4.3x: nothing in the
+    status payload may read like a charge."""
+    blob = repr(billing.status(ACC)).lower()
+    for bad in ("$10", "10.0", "830", "/mo", "month", "week", "razorpay",
+                "stripe", "upgrade"):
+        assert bad not in blob, f"status() leaks {bad!r}"

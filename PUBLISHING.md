@@ -1,51 +1,59 @@
-# Publishing KEEL & enabling real payments
+# Publishing KEEL
+
+KEEL is free. There is no paid tier, no payment provider, and nothing to
+activate — so this document is only about shipping the package.
 
 ## Publish the package (PyPI)
+
 ```bash
 pip install build twine
-python -m build                    # builds dist/keel-<version>.whl + .tar.gz
-twine upload dist/*                # needs a PyPI account + token
+
+rm -rf build/ dist/ *.egg-info/   # do not skip this
+python -m build                   # builds dist/keel-<version>.whl + .tar.gz
+twine check dist/*                # metadata sanity
+twine upload dist/*               # needs a PyPI account + token
 ```
-After that, anyone can `pip install keel`.
+
+**Always clean `build/` and `dist/` first.** setuptools copies sources into
+`build/lib` and never prunes files that have since been deleted from the tree,
+so a module you removed can survive into a "fresh" wheel. This has already
+happened once here: a wheel in `dist/` was found still carrying the payment
+integration weeks after it was deleted from the repo — and the publish step is
+`twine upload dist/*`, which would have pushed it to PyPI. `.dockerignore`
+excludes the same directories so an image build cannot pick up a stale tree
+either.
+
+Verify before uploading, rather than trusting the build:
+
+```bash
+python - <<'PY'
+import glob, zipfile
+for w in glob.glob("dist/*.whl"):
+    names = zipfile.ZipFile(w).namelist()
+    print(w, len(names), "files")
+    src = zipfile.ZipFile(w).read("keel/billing.py").decode()
+    for gone in ("razorpay", "stripe", "create_checkout", "PRICE_INR"):
+        assert gone not in src.lower(), f"{w} still contains {gone}"
+    print("  clean")
+PY
+```
+
+After upload, anyone can `pip install keel`.
 
 ## Source (GitHub)
-Push the repo; the certificate schema and reference verifier being public is
-part of the standards play. A CI workflow is in `.github/workflows/ci.yml`.
 
-## Enable real payments
+Push the repo. The certificate schema and the reference verifier being public
+is deliberate — a certificate nobody outside KEEL can verify is not evidence.
+CI lives in `.github/workflows/ci.yml`.
 
-KEEL auto-selects the provider: **Razorpay** (India) when its keys are set,
-**Stripe** otherwise. Set `KEEL_PAYMENT_PROVIDER` to force one.
+## Deployment configuration
 
-### India — Razorpay (UPI, cards, netbanking)
-1. Create a Razorpay account; get Key ID + Key Secret (Settings → API Keys).
-2. Set on the KEEL server:
-   ```bash
-   export RAZORPAY_KEY_ID=rzp_live_xxx
-   export RAZORPAY_KEY_SECRET=xxx
-   export RAZORPAY_WEBHOOK_SECRET=xxx        # any strong secret you also set below
-   export KEEL_PRICE_INR=830                 # ~$10; change freely
-   ```
-3. Razorpay Dashboard → Settings → Webhooks → add
-   `https://YOUR_HOST/api/billing/webhook/razorpay`, event `payment_link.paid`,
-   with the same secret.
-4. Done. **Upgrade · Team** opens a Razorpay payment link for ₹830 (UPI/cards);
-   on payment the Team plan activates automatically. Test with Razorpay test
-   keys and their test UPI / card `4111 1111 1111 1111`.
+The variables an operator actually needs are documented in `DEPLOY.md`. The one
+that is easy to miss and expensive to get wrong:
 
-### Elsewhere — Stripe
-1. Stripe account → keys. 2. `export STRIPE_SECRET_KEY=... STRIPE_WEBHOOK_SECRET=...`
-3. Stripe Dashboard webhook `https://YOUR_HOST/api/billing/webhook`, event
-   `checkout.session.completed`. 4. Test card `4242 4242 4242 4242`.
-
-## Local evaluation (no Stripe)
-The console's **Activate (dev / evaluation)** button unlocks Team locally using
-the deployment unlock code (`KEEL_UNLOCK_CODE`, default `DEV-UNLOCK`). This is
-for trying the features, not a paid record.
-
-## What "paid" enforces
-- Managed/cloud deployment: the license is issued and verified server-side —
-  the paywall is enforced.
-- Self-hosted OSS: the operator holds the signing key, so the gate is a license
-  mechanism; the paid value (managed hosting, HSM key custody, support) is what
-  self-hosting doesn't provide anyway.
+- **`KEEL_SIGNING_KEY_PEM`** — the Ed25519 authority key. On a host with an
+  ephemeral filesystem (Render's free tier, Fly, a fresh container) a
+  file-backed key is regenerated on every deploy, which silently invalidates
+  every certificate ever issued and the transparency-log root. The service
+  keeps reporting healthy the whole time. Generate one with `keel keygen` and
+  set it before anyone relies on a certificate.

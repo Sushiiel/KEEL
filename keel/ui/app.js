@@ -196,7 +196,7 @@ const VIEWS = [
   ["evidence", "Evidence", "6"], ["policy", "Policy", "7"],
   ["connect", "＋ Connect data", "8"],
   ["gateway", "Agent Gateway", "9"],
-  ["billing", "Upgrade · Team", "0"],
+  ["account", "Account", "0"],
 ];
 let PACKS = [];
 const isSandbox = () => (PACKS.find((p) => p.key === DOM) || { sandbox: true }).sandbox;
@@ -1194,12 +1194,10 @@ async function viewGateway(root) {
       const a = h("a", { href: URL.createObjectURL(blob),
                          download: `keel-audit-pack-${Date.now()}.json` });
       a.click();
-      if (pack.preview) {
-        toast("Preview exported (3 decisions). Upgrade to Team for the full auditor-ready pack →", "");
-        setTimeout(() => { location.hash = "#/billing"; }, 900);
-      } else {
-        toast(`Full audit pack exported: ${pack.sampled_decisions.length} verified decisions, chain ${pack.transparency_log.chain_consistent ? "consistent" : "BROKEN"}`, "good");
-      }
+      const n = (pack.sampled_decisions || []).length;
+      toast(`Audit pack exported: ${n} verified decision${n === 1 ? "" : "s"}, `
+        + `chain ${pack.transparency_log.chain_consistent ? "consistent" : "BROKEN"}`,
+        pack.transparency_log.chain_consistent ? "good" : "crit");
     } }, "Export audit evidence pack"),
     h("span", { style: "font-size:11px;color:var(--ink-3);align-self:center" },
       "uniform-random sampled, signature-verified, Merkle-proven — the bundle ISO 42001 auditors and AI insurers request")));
@@ -1255,7 +1253,7 @@ async function viewGateway(root) {
           h("span", { class: "chip" }, d.risk))))));
 }
 
-/* ── BILLING / UPGRADE ($10 Team) ───────────────────────────────────────── */
+/* ── ACCOUNT ─────────────────────────────────────────────────────────────── */
 const FEATURE_LABELS = {
   managed_hosting: "Managed, HA hosting",
   hsm_keys: "HSM-backed signing keys",
@@ -1263,106 +1261,82 @@ const FEATURE_LABELS = {
   evidence_export_full: "Full evidence-pack export",
   evidence_scheduling: "Scheduled evidence packs",
   priority_support: "Priority email & chat support",
+  sso: "Single sign-on",
+  rbac: "Role-based access control",
+  private_deploy: "Private / air-gapped deployment",
+  worm_retention: "WORM retention for the ledger",
+  custom_policy: "Custom policy packs",
 };
 
-async function viewBilling(root) {
-  const st = await api("/api/billing/status");
-  const paid = st.valid && st.plan !== "free";
-  // the billing period comes from the server so the price shown at the moment
-  // of purchase can never disagree with what is actually charged
-  const per = (st.price && st.price.period) || "week";
-  const priceLabel = `${st.price_display}/${per}`;
+async function viewAccount(root) {
+  const st = await api("/api/entitlement");
   let me = null;
   try { me = await fetch("/api/auth/me").then((r) => r.json()); } catch { /* */ }
+
+  root.append(h("h1", { class: "page" }, "Account"),
+    h("div", { class: "page-sub" },
+      "Your API key connects your agents to this deployment. Every KEEL feature "
+      + "is included at no cost."));
+
+  // ── the API key. This is the one thing a new user cannot proceed without,
+  // so it gets the top of the page and a copy button rather than a bare span.
+  const keyValue = (me && me.api_key) || "";
+  root.append(h("div", { class: "panel", style: "margin-bottom:16px" },
+    h("h3", {}, "Agent API key",
+      h("span", { class: "r" }, "send as Authorization: Bearer <key>")),
+    keyValue
+      ? h("div", {},
+          h("div", { style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap" },
+            h("span", { class: "mono", id: "api-key",
+              style: "user-select:all;background:var(--panel-3);padding:7px 11px;border-radius:6px;font-size:12.5px;word-break:break-all;flex:1;min-width:240px" },
+              keyValue),
+            h("button", { class: "primary", onclick: async () => {
+              try {
+                await navigator.clipboard.writeText(keyValue);
+                toast("API key copied to clipboard", "good");
+              } catch {
+                toast("Select the key and copy it manually", "");
+              }
+            } }, "Copy"),
+            h("button", { class: "ghost", onclick: async () => {
+              if (!confirm("Rotate the API key?\n\nEvery agent using the current "
+                + "key stops being able to reach KEEL until you update it.")) return;
+              await post("/api/auth/rotate-key");
+              toast("New key issued — update your agents", "good");
+              route();
+            } }, "Rotate")),
+          h("div", { style: "font-size:11.5px;color:var(--ink-3);margin-top:10px;line-height:1.7" },
+            "Treat it like a password: it authenticates as your account. Keep it in "
+            + "an environment variable, never in source control.",
+            h("div", { style: "margin-top:8px" },
+              h("span", { class: "mono", style: "background:var(--panel-3);padding:3px 7px;border-radius:4px" },
+                "export KEEL_API_KEY=" + keyValue.slice(0, 8) + "…"))))
+      : h("div", { class: "empty" },
+          "No API key on this session. Sign in at /app to get one.")));
+
+  // ── identity
   if (me && me.email && me.email !== "default@local") {
     root.append(h("div", { class: "panel", style: "margin-bottom:16px" },
-      h("h3", {}, "Account"),
+      h("h3", {}, "Signed in"),
       h("div", { style: "display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-size:13px" },
-        h("div", {}, h("span", { style: "color:var(--ink-3)" }, "signed in as "),
-          h("b", {}, me.email)),
-        h("div", {}, h("span", { style: "color:var(--ink-3)" }, "agent API key "),
-          h("span", { class: "mono", style: "user-select:all;background:var(--panel-3);padding:3px 8px;border-radius:5px" },
-            me.api_key || "—")),
-        h("button", { class: "ghost", onclick: async () => {
-          if (!confirm("Rotate the API key? Existing agents must update it.")) return;
-          const r = await post("/api/auth/rotate-key"); toast("New key issued"); route(); } }, "Rotate"),
-        h("button", { class: "ghost", onclick: async () => {
-          await fetch("/api/auth/logout", { method: "POST" }); location.reload(); } }, "Sign out")),
-      h("div", { style: "font-size:11.5px;color:var(--ink-3);margin-top:8px" },
-        "Wire your agents with ", h("span", { class: "mono" }, "Authorization: Bearer <API key>"),
-        " so their actions and billing attribute to this account.")));
-  }
-  root.append(h("h1", { class: "page" }, paid ? "Team plan — active" : "Upgrade to Team"),
-    h("div", { class: "page-sub" },
-      paid ? h("span", {}, "Your deployment is on the ", h("b", {}, "Team"),
-        " plan. All features below are unlocked.")
-           : h("span", {}, "Unlock managed hosting, hardened keys, approval-queue integrations, and the full compliance evidence workflow for ",
-        h("b", {}, priceLabel), ".")));
-
-  // plan card
-  const feats = new Set(st.features);
-  root.append(h("div", { class: "grid", style: "grid-template-columns:1.1fr 1fr;align-items:start" },
-    h("div", { class: "panel" },
-      h("h3", {}, "Team · ", h("span", { style: "color:var(--brass)" }, priceLabel),
-        h("span", { class: "r" }, paid ? "active" : "not active")),
-      h("div", {}, st.all_team_features.map((f) => {
-        const on = feats.has(f);
-        return h("div", { style: "display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hairline);font-size:13.5px" },
-          h("span", { style: `font-weight:700;color:${on ? "var(--good)" : "var(--ink-3)"}` }, on ? "✓" : "🔒"),
-          h("span", { style: on ? "" : "color:var(--ink-3)" }, FEATURE_LABELS[f] || f));
-      })),
-      h("div", { style: "margin-top:16px;display:flex;gap:10px;flex-wrap:wrap" },
-        paid
-          ? h("button", { class: "danger", onclick: async () => {
-              await post("/api/billing/deactivate"); toast("Downgraded to free"); route(); } },
-              "Cancel Team")
-          : h("button", { class: "primary", onclick: startCheckout },
-              `Upgrade — ${priceLabel}`),
-        !paid && !st.payments_live
-          ? h("button", { onclick: devUnlock }, "Activate (dev / evaluation)")
-          : null)),
-    h("div", { class: "panel" },
-      h("h3", {}, "How payment works"),
-      h("div", { style: "font-size:13px;color:var(--ink-2);line-height:1.7" },
-        st.payments_live
-          ? h("span", {}, `Payments are live via ${st.provider === "razorpay" ? "Razorpay (UPI, cards, netbanking)" : "Stripe"}. Clicking Upgrade opens secure checkout for `,
-              h("b", {}, st.price_display), ". On success you return here and Team unlocks automatically.")
-          : h("span", {}, "No payment provider is configured on this deployment, so real payments are off. ",
-              h("b", {}, "For evaluation"), ", use ",
-              h("span", { class: "mono" }, "Activate (dev / evaluation)"),
-              " to unlock Team locally. To take real payments in India set ",
-              h("span", { class: "mono" }, "RAZORPAY_KEY_ID"), " + ",
-              h("span", { class: "mono" }, "RAZORPAY_KEY_SECRET"),
-              " (or Stripe elsewhere).")),
-      st.valid ? h("div", { style: "margin-top:14px" },
-        h("span", { class: "chip good" }, `plan ${st.plan}`), " ",
-        st.expires_at ? h("span", { class: "chip" }, "renews " + new Date(st.expires_at * 1000).toISOString().slice(0, 10)) : null,
-        st.source ? h("span", { class: "chip", style: "margin-left:6px" }, st.source) : null) : null)));
-
-  // handle payment return (Stripe: session_id · Razorpay: razorpay_* params)
-  const q = new URLSearchParams(location.hash.split("?")[1] || "");
-  if (q.get("checkout") === "success") {
-    const params = {}; q.forEach((v, k) => { params[k] = v; });
-    const r = await post("/api/billing/confirm", params);
-    toast(r.activated ? "Payment confirmed — Team unlocked" : "Could not confirm payment (" + (r.error || "") + ")", r.activated ? "good" : "crit");
-    location.hash = "#/billing"; if (r.activated) setTimeout(route, 300);
+        h("div", {}, h("span", { style: "color:var(--ink-3)" }, "account "), h("b", {}, me.email)),
+        me.account_id ? h("span", { class: "mono", style: "color:var(--ink-3);font-size:11px" },
+          me.account_id) : null,
+        h("button", { class: "ghost", style: "margin-left:auto", onclick: async () => {
+          await fetch("/api/auth/logout", { method: "POST" }); location.reload();
+        } }, "Sign out"))));
   }
 
-  async function startCheckout() {
-    const r = await post("/api/billing/checkout", {});
-    if ((r.mode === "razorpay" || r.mode === "stripe") && r.url) { location.href = r.url; }
-    else if (r.mode === "dev") { toast(r.message, "crit"); }
-    else { toast(r.error || "checkout unavailable", "crit"); }
-  }
-  async function devUnlock() {
-    const code = prompt("Enter the deployment unlock code (dev/evaluation).\nDefault for local dev is: DEV-UNLOCK", "DEV-UNLOCK");
-    if (code === null) return;
-    try {
-      const r = await post("/api/billing/activate", { code });
-      toast("Team activated (evaluation) — features unlocked", "good");
-      route();
-    } catch (e) { toast("Activation failed: " + e.message, "crit"); }
-  }
+  // ── what this account can do. No lock icons: nothing is withheld.
+  const features = st.all_features || st.features || [];
+  root.append(h("div", { class: "panel" },
+    h("h3", {}, "Included", h("span", { class: "r" }, "no payment, no expiry")),
+    h("div", { style: "font-size:13px;color:var(--ink-2);margin-bottom:12px" },
+      "Every capability KEEL ships is available on your account."),
+    h("div", {}, features.map((f) =>
+      h("div", { style: "display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hairline);font-size:13.5px" },
+        h("span", { style: "font-weight:700;color:var(--good)" }, "✓"),
+        h("span", {}, FEATURE_LABELS[f] || f))))));
 }
 
 /* ── router ──────────────────────────────────────────────────────────────── */
@@ -1395,7 +1369,10 @@ async function route() {
     else if (view === "policy") await viewPolicy(root);
     else if (view === "connect") await viewConnect(root);
     else if (view === "gateway") await viewGateway(root);
-    else if (view === "billing") await viewBilling(root);
+    else if (view === "account") await viewAccount(root);
+    // #/billing was the old upgrade screen; keep bookmarks and any stale link
+    // working rather than dead-ending on the empty-view fallback
+    else if (view === "billing") { location.hash = "#/account"; return; }
     else { location.hash = "#/deck"; }
   } catch (e) {
     root.append(h("div", { class: "empty" }, `Failed to load: ${e.message}. The engine may still be seeding — retrying in 3s.`));

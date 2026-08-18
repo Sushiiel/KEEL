@@ -17,9 +17,16 @@ env:
   KEEL_AUTH_REQUIRED: "1"
   KEEL_SECRET_KEY: ""        # REQUIRED: openssl rand -hex 32
   KEEL_HTTPS: "1"
-  RAZORPAY_KEY_ID: ""
-  RAZORPAY_KEY_SECRET: ""
-  RAZORPAY_WEBHOOK_SECRET: ""
+  # Ed25519 authority key. Without it a file-backed key is regenerated on
+  # every pod restart, making previously issued certificates unverifiable.
+  # Generate with `keel keygen`. Supply via a Secret, not this file.
+  KEEL_SIGNING_KEY_PEM: ""
+  KEEL_SIGNUP: "open"             # open | invite | closed
+  KEEL_INVITE_CODE: ""            # required when KEEL_SIGNUP=invite
+  KEEL_TRUSTED_PROXY: "1"         # behind an ingress; honours X-Forwarded-For
+  KEEL_LEGAL_ENTITY: ""           # shown on /terms, /privacy, /contact
+  KEEL_LEGAL_ADDRESS: ""
+  KEEL_SUPPORT_EMAIL: ""
   KEEL_LLM_MODEL: ""              # any LiteLLM route; empty = deterministic proposer
   QDRANT_URL: ""                  # e.g. http://qdrant:6333
   OTEL_EXPORTER_OTLP_ENDPOINT: "" # e.g. http://otel-collector:4318

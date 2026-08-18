@@ -1,0 +1,46 @@
+# Keep stale build output out of the image context.
+#
+# setuptools' build_py copies sources into build/lib and never prunes files
+# that have since been deleted from the tree. A module removed from the source
+# can therefore survive into a freshly built wheel. That is not hypothetical:
+# a wheel in dist/ was found still carrying a payment integration that had
+# already been deleted from the repo, and the publish step is `twine upload
+# dist/*`. Excluding these makes each image build start from the real source.
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Local environments and caches — never belong in an image
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Repository and editor state
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+*.swp
+
+# Secrets and local data must never enter an image layer
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.sqlite3
+*.pem
+*.key
+
+# Docs and scratch files add layer weight without runtime value
+*.md
+!README.md
+node_modules/

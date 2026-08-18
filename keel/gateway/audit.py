@@ -44,14 +44,45 @@ CONTROL_MAPPINGS = {
 }
 
 
-def build_audit_pack(sample_size: int = 25, seed: int | None = None
-                     ) -> dict[str, Any]:
+def build_audit_pack(sample_size: int = 25, seed: int | None = None,
+                     account_id: str | None = None) -> dict[str, Any]:
+    """Assemble the audit evidence pack.
+
+    `account_id` scopes the pack to one tenant. Leave it None only for
+    single-tenant / self-host / CLI use: an unscoped pack contains every
+    account's certificates, calibration, and approver identities, so serving
+    one to a logged-in user is a cross-tenant disclosure.
+
+    Attribution runs certificate -> decision -> agent -> owner_account, since a
+    Certificate carries no account of its own. Anything that cannot be walked
+    all the way to an owned agent is EXCLUDED — fail closed, because the
+    alternative leaks.
+    """
     store = gw_store()
     rng = random.Random(seed)
     entries = store.translog()
     chain = translog.verify_chain(store)
-    sample_idx = sorted(rng.sample(range(len(entries)),
-                                   min(sample_size, len(entries))))
+
+    agents = list_agents(account_id)
+    # Pull the full decision history, not a recent window: attribution must not
+    # depend on how recently an agent happened to act.
+    decisions = recent_decisions(10_000)
+
+    if account_id is None:
+        eligible = list(range(len(entries)))
+        scoped_decisions = decisions
+    else:
+        owned_agents = {a.agent_id for a in agents}
+        owned_certs = {d.cert_id for d in decisions
+                       if d.agent_id in owned_agents and d.cert_id}
+        eligible = [i for i, e in enumerate(entries)
+                    if e.get("cert_id") in owned_certs]
+        scoped_decisions = [d for d in decisions if d.agent_id in owned_agents]
+
+    # Sample from the ELIGIBLE population. Sampling globally and filtering
+    # afterwards would silently return far fewer than sample_size — and would
+    # make the "uniform random over the full log" claim false for this tenant.
+    sample_idx = sorted(rng.sample(eligible, min(sample_size, len(eligible))))
     sampled = []
     for idx in sample_idx:
         cert = store.certificate(entries[idx]["cert_id"])
@@ -63,7 +94,7 @@ def build_audit_pack(sample_size: int = 25, seed: int | None = None
             "inclusion_proof": translog.inclusion_proof(store, idx)})
 
     calibration = []
-    for agent in list_agents():
+    for agent in agents:
         for cls in agent.action_classes:
             conf = confidence_for(agent.agent_id, cls)
             calibration.append({
@@ -75,20 +106,33 @@ def build_audit_pack(sample_size: int = 25, seed: int | None = None
                 "scope": "marginal per-stratum lower bound over the drift-"
                          "audited rolling window; not a per-decision probability"})
 
-    decisions = recent_decisions(500)
+    # approved_by is an approver's identity — the most sensitive field here, so
+    # it is drawn from the SCOPED decisions, never the global list.
     oversight = [{"request_id": d.request_id, "agent": d.agent_id,
                   "action_class": d.action_class, "approved_by": d.approved_by,
                   "final": d.decision}
-                 for d in decisions if d.approved_by]
+                 for d in scoped_decisions if d.approved_by]
 
     return {
         "generated_at": time.time(),
         "authority_public_key": authority.public_key_hex(),
+        # The log root and chain are deployment-wide facts: they are what makes
+        # the pack independently verifiable, and they reveal no tenant content.
         "transparency_log": {"size": chain["size"], "root": chain["root"],
                              "chain_consistent": chain["consistent"]},
+        "scope": ({"kind": "account", "account_id": account_id,
+                   "note": "certificates, calibration and oversight records are "
+                           "restricted to this account; the log root covers the "
+                           "whole deployment"}
+                  if account_id is not None else
+                  {"kind": "deployment", "account_id": None,
+                   "note": "every account in this deployment"}),
         "sampled_decisions": sampled,
-        "sampling": {"method": "uniform-random over full log",
-                     "seed": seed, "n": len(sampled)},
+        "sampling": {"method": ("uniform-random over this account's log entries"
+                                if account_id is not None else
+                                "uniform-random over full log"),
+                     "seed": seed, "n": len(sampled),
+                     "eligible_population": len(eligible)},
         "calibration_tables": calibration,
         "human_oversight_record": oversight,
         "enforcement_config": {

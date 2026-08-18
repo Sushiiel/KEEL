@@ -1,5 +1,12 @@
-"""Security regressions from the commit review: no paywall bypass in prod,
-no SSRF, no cross-account authorization holes."""
+"""Security regressions from the commit review: no SSRF, no LFI, no
+cross-account authorization holes, no anonymous API surface.
+
+The paywall-bypass tests that used to live here (dev-unlock in production,
+forged licence signatures) are gone with the paywall itself — there is no
+licence to forge and nothing to bypass. What replaced them is the check below
+that a feature gate cannot be tricked into passing on a name KEEL does not
+ship, since that is the failure mode a free build still has.
+"""
 import os
 os.environ.setdefault("KEEL_SANDBOX", "1")
 import tempfile
@@ -8,37 +15,15 @@ os.environ["KEEL_DATA_DIR"] = tempfile.mkdtemp(prefix="keel-sec-")
 from keel import billing, accounts
 
 
-def test_dev_unlock_disabled_in_production():
-    """dev activation must NOT bypass the paywall when auth is required and no
-    explicit unlock code is configured."""
-    os.environ["KEEL_AUTH_REQUIRED"] = "1"
-    os.environ.pop("KEEL_UNLOCK_CODE", None)
-    billing.deactivate("acct_x")
-    res = billing.dev_activate("acct_x", "DEV-UNLOCK")
-    assert not res["activated"], "prod dev-unlock must be refused"
-    assert not billing.has_feature("acct_x", "hsm_keys")
-    os.environ["KEEL_AUTH_REQUIRED"] = "0"
-
-
-def test_dev_unlock_works_locally():
-    os.environ["KEEL_AUTH_REQUIRED"] = "0"
-    billing.deactivate("acct_y")
-    assert billing.dev_activate("acct_y", "DEV-UNLOCK")["activated"]
-
-
-def test_explicit_unlock_code_required_when_set():
-    os.environ["KEEL_AUTH_REQUIRED"] = "1"
-    os.environ["KEEL_UNLOCK_CODE"] = "s3cret-code"
-    billing.deactivate("acct_z")
-    assert not billing.dev_activate("acct_z", "DEV-UNLOCK")["activated"]  # default rejected
-    assert billing.dev_activate("acct_z", "s3cret-code")["activated"]     # real code works
-    os.environ["KEEL_AUTH_REQUIRED"] = "0"
-    os.environ.pop("KEEL_UNLOCK_CODE", None)
-
-
-def test_entitlement_fails_closed_on_corrupt_license():
-    billing._bill_store().kv_set(billing._lkey("acct_bad"), {"plan": "team", "signature": "00"})
-    assert not billing.has_feature("acct_bad", "hsm_keys")   # bad signature → free
+def test_feature_gate_refuses_unknown_names():
+    """require_feature() raises on a False result, so has_feature must not be
+    permissive by default — otherwise a typo'd gate silently passes and an
+    endpoint ships unprotected, which is exactly how ~34 routes once shipped
+    anonymous."""
+    assert not billing.has_feature("acct_x", "hsm_keyz")
+    assert not billing.has_feature("acct_x", "")
+    for real in billing.ALL_FEATURES:
+        assert billing.has_feature("acct_x", real), real
 
 
 def test_document_parser_refuses_untrusted_paths_and_urls():
@@ -83,13 +68,19 @@ def test_no_bare_json_404_for_browsers():
     r = c.get("/some-typo")
     assert r.status_code == 404 and "text/html" in r.headers["content-type"]
     assert "doesn't exist" in r.text
-    # API path → machine-readable JSON
+    # API path → machine-readable JSON, NOT an HTML page.
+    # When auth is required an anonymous caller gets 401 instead, deliberately:
+    # a stranger must not be able to probe which /api paths exist. Both answers
+    # are correct, so accept either and assert the shape of each.
     r = c.get("/api/nope")
-    assert r.status_code == 404 and r.json()["error"] == "not found"
+    if r.status_code == 401:
+        assert "authentication required" in r.json()["error"]
+    else:
+        assert r.status_code == 404 and r.json()["error"] == "not found"
     # favicon exists (browsers request it on every page load)
     assert c.get("/favicon.ico").status_code == 200
     # common typed paths redirect instead of 404ing
     for path, dest in [("/pricing", "/#pricing"), ("/login", "/app"),
-                       ("/documentation", "/docs"), ("/upgrade", "/app#/billing")]:
+                       ("/documentation", "/docs"), ("/upgrade", "/app#/account")]:
         r = c.get(path, follow_redirects=False)
         assert r.status_code == 307 and r.headers["location"] == dest, path

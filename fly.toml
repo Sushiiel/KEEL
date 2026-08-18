@@ -22,5 +22,9 @@ primary_region = "sin"                 # Singapore — near India
   destination = "/data"
 # After deploy set secrets:
 #   fly secrets set KEEL_SECRET_KEY=$(openssl rand -hex 32)
-#   fly secrets set RAZORPAY_KEY_ID=... RAZORPAY_KEY_SECRET=... RAZORPAY_WEBHOOK_SECRET=...
+#   fly secrets set KEEL_SIGNING_KEY_PEM="$(keel keygen --quiet)"
+#       ^ the Ed25519 authority key. Without it, a redeploy regenerates the key
+#         and every certificate ever issued stops verifying.
+#   fly secrets set KEEL_SIGNUP=invite KEEL_INVITE_CODE=...
+#   fly secrets set KEEL_TRUSTED_PROXY=1     # Fly terminates TLS
 #   fly secrets set GEMINI_API_KEY=...
